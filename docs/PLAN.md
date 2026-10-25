@@ -19,17 +19,17 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Alembic migrations (verified: upgrade+downgrade against clean DB)
 - [x] Unit tests for scheduling & repositories (in-memory SQLite)
 
-## Stage 2 — Telegram adapter + i18n
-- [ ] Telethon `start_bot`, MTProto proxy support
-- [ ] Messenger port implemented; commands/buttons mapped to platform API
-- [ ] i18n: ru/en JSON catalogs, `t()`, per-user language, `/lang`
-- [ ] CI test: ru/en catalog key parity
+## Stage 2 — Telegram adapter + i18n ✅
+- [x] Telethon `start_bot`, MTProto proxy support
+- [x] Messenger port implemented; commands/buttons mapped to platform API
+- [x] i18n: ru/en JSON catalogs, `t()`, per-user language, `/lang`
+- [x] CI test: ru/en catalog key parity
 
-## Stage 3 — Reminder scheduler
-- [ ] APScheduler minute tick in user timezone
-- [ ] Silence rules: no tasks today / no tasks for current place → no message
-- [ ] Stale location → "Where are you?" place buttons, then digest
-- [ ] Digest with ✅ / ⏭ buttons; user reminder settings (times/interval,
+## Stage 3 — Reminder scheduler ✅
+- [x] Minute tick in user timezone (asyncio loop; APScheduler left out as dep-only)
+- [x] Silence rules: no tasks today / no tasks for current place → no message
+- [x] Stale location → "Where are you?" place buttons, then digest
+- [x] Digest with ✅ / ⏭ buttons; user reminder settings (times/interval,
       quiet hours, location TTL)
 
 ## Stage 4 — Statistics

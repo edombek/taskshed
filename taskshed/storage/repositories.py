@@ -100,6 +100,7 @@ def _settings(r: UserSettings) -> SettingsDC:
         location_ttl_hours=r.location_ttl_hours, tz=r.tz,
         notify_platforms=r.notify_platforms, stats_format=r.stats_format,
         last_reminded_at=_aware(r.last_reminded_at),
+        pending_reminder=r.pending_reminder,
     )
 
 
@@ -123,6 +124,15 @@ class Store:
                 )
             )
             return _to_dc(row) if row else None
+
+    async def get_account_by_key(self, platform: str, platform_user_id: str) -> AccountDC | None:
+        async with self._sf() as s:
+            r = await s.scalar(
+                select(Account).where(Account.platform == platform,
+                                      Account.platform_user_id == platform_user_id)
+            )
+            return (AccountDC(r.id, r.user_id, r.platform, r.platform_user_id, _aware(r.linked_at))
+                    if r else None)
 
     async def get_user(self, user_id: int) -> UserDC | None:
         async with self._sf() as s:
@@ -181,10 +191,9 @@ class Store:
             return _settings(row)
 
     async def update_settings(self, user_id: int, **values) -> SettingsDC:
-        if "quiet_start" in values:
-            values["quiet_start"] = values["quiet_start"].strftime("%H:%M")
-        if "quiet_end" in values:
-            values["quiet_end"] = values["quiet_end"].strftime("%H:%M")
+        for k in ("quiet_start", "quiet_end"):
+            if isinstance(values.get(k), time):
+                values[k] = values[k].strftime("%H:%M")
         if "last_reminded_at" in values and values["last_reminded_at"]:
             values["last_reminded_at"] = _naive(values["last_reminded_at"])
         async with self._sf() as s:
@@ -412,6 +421,37 @@ class Store:
             await s.commit()
 
     # ---------- stats support ----------
+
+    async def get_occurrence(self, occurrence_id: int) -> tuple[OccDC, TaskDC] | None:
+        async with self._sf() as s:
+            row = await s.get(TaskOccurrence, occurrence_id)
+            if not row:
+                return None
+            task = await s.get(Task, row.task_id)
+            return (_occ(row), _task(task)) if task else None
+
+    async def merge_user(self, from_id: int, to_id: int) -> None:
+        """Move places/tasks of `from_id` into `to_id`, rename name clashes."""
+        async with self._sf() as s:
+            places = (await s.scalars(select(Place).where(Place.user_id == from_id))).all()
+            existing = {p.name for p in (
+                await s.scalars(select(Place).where(Place.user_id == to_id))
+            ).all()}
+            for p in places:
+                name = p.name
+                i = 2
+                while name in existing:
+                    name = f"{p.name} #{i}"
+                    i += 1
+                p.name = name
+                p.user_id = to_id
+                existing.add(name)
+            await s.execute(update(Task).where(Task.user_id == from_id).values(user_id=to_id))
+            await s.execute(delete(UserSettings).where(UserSettings.user_id == from_id))
+            await s.execute(delete(CurrentLocation).where(CurrentLocation.user_id == from_id))
+            await s.execute(delete(User).where(User.id == from_id))
+            s.add(LinkAudit(user_id=to_id, action="merge", detail=f"from user {from_id}"))
+            await s.commit()
 
     async def occurrences_in_range(self, user_id: int, start: datetime,
                                    end: datetime) -> list[tuple[OccDC, TaskDC]]:

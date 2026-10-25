@@ -2,12 +2,13 @@
 
 ## State of the repo
 
-Stages 0–1 committed on `main`: bootstrap (bilingual README, docs, diagrams,
-CI) and Stage 1 (`taskshed/core`, `taskshed/storage`, Alembic, 18 passing
-tests). `docs/PLAN.md` is the living checklist — check it before assuming
-what exists. Not implemented yet at time of writing: messenger port/adapters,
-bot handlers, i18n catalogs, scheduler, stats. Do not assume files listed
-only in `docs/en/architecture.md` module map exist until verified.
+Stages 0–3 committed on `main`: bootstrap, core+storage+Alembic, messenger
+port + `FakeMessenger` + i18n + `bot/app.py` + Telethon adapter, reminder
+scheduler (`scheduler/jobs.py`, asyncio loop — APScheduler unused). 39 tests
+pass. `docs/PLAN.md` is the living checklist. Not implemented yet at time of
+writing: VK adapter, stats module (CSV/XLSX/charts), `stats/` package,
+`entrypoints/`. Do not assume files listed only in `docs/en/architecture.md`
+module map exist until verified.
 
 ## Commands
 

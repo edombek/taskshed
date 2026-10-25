@@ -92,3 +92,4 @@ class UserSettings:
     notify_platforms: str = "all"       # "all" | "primary"
     stats_format: str = "both"          # "text" | "image" | "both"
     last_reminded_at: datetime | None = None
+    pending_reminder: bool = False      # digest awaiting location answer
