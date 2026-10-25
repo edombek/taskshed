@@ -10,14 +10,14 @@ Checklist of the implementation roadmap. EN summary in
 - [x] GitHub Actions CI: ruff + pytest
 - [x] private repo `github.com/edombek/tg-bot-task-sheduler`
 
-## Stage 1 — Core domain & storage
-- [ ] `core/`: domain dataclasses, schedule rules (once / every_n_days /
+## Stage 1 — Core domain & storage ✅
+- [x] `core/`: domain dataclasses, schedule rules (once / every_n_days /
       weekdays / monthly_day), occurrence materialization, overdue pass
-- [ ] `storage/`: SQLAlchemy 2 async models — `users`, `accounts`, `places`,
+- [x] `storage/`: SQLAlchemy 2 async models — `users`, `accounts`, `places`,
       `current_location`, `tasks`, `task_occurrences`, `completions`,
       `user_settings`, `link_codes` + repositories
-- [ ] Alembic migrations
-- [ ] Unit tests for scheduling & repositories (in-memory SQLite)
+- [x] Alembic migrations (verified: upgrade+downgrade against clean DB)
+- [x] Unit tests for scheduling & repositories (in-memory SQLite)
 
 ## Stage 2 — Telegram adapter + i18n
 - [ ] Telethon `start_bot`, MTProto proxy support

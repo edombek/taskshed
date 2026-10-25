@@ -2,10 +2,27 @@
 
 ## State of the repo
 
-Greenfield as of 2026-10-25: no code committed yet. Do not assume any files,
-commands, or layout exist — verify before referencing them. The agreed design
-contract is below; keep changes consistent with it until `docs/PLAN.md` (once
-created) supersedes it.
+Stages 0–1 committed on `main`: bootstrap (bilingual README, docs, diagrams,
+CI) and Stage 1 (`taskshed/core`, `taskshed/storage`, Alembic, 18 passing
+tests). `docs/PLAN.md` is the living checklist — check it before assuming
+what exists. Not implemented yet at time of writing: messenger port/adapters,
+bot handlers, i18n catalogs, scheduler, stats. Do not assume files listed
+only in `docs/en/architecture.md` module map exist until verified.
+
+## Commands
+
+```bash
+source .venv/bin/activate          # venv already provisioned (Python 3.14); or:
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+ruff check . && pytest             # the CI gate; pytest needs no extra flags
+```
+
+- pytest runs async tests without markers: `asyncio_mode = "auto"` is set in
+  `pyproject.toml`.
+- Single test: `pytest tests/test_scheduling.py::test_name`.
+- Local Python is 3.14 but CI pins 3.12 — avoid version-specific syntax beyond
+  what `requires-python = ">=3.12"` allows.
+
 
 ## Project intent
 
@@ -56,3 +73,14 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
 - Secrets: `.env`/`config.yaml` are gitignored; commit only `.env.example` /
   `config.example.yaml` (per-platform proxy blocks: mtproxy for Telegram,
   http/socks5 for VK).
+
+## Gotchas
+
+- All datetimes in `core` and repositories are **timezone-aware UTC**; convert
+  to the user's tz only at display/scheduling boundaries (`core/models.py`
+  docstring). SQLite itself stores naive.
+- In-memory SQLite tests must build the engine via `storage/db.py::make_engine`
+  — it applies `StaticPool`, without it every connection gets its own empty DB.
+- Telegram uses **Telethon in bot mode** (`start_bot`), not python-telegram-bot;
+  MTProxy needs `ConnectionTcpMTProxyRandomizedIntermediate`.
+

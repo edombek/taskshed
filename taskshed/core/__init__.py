@@ -1,0 +1,1 @@
+"""Platform-independent domain logic."""
