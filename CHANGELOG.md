@@ -16,3 +16,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (commands, task wizard, buttons, `/link`), config loader (YAML + env).
 - (Stage 3) Reminder scheduler tick with silence rules, stale-location ask,
   digest fan-out to linked accounts, per-user reminder settings.
+- (Stage 4) Statistics: aggregations, text report, CSV/XLSX documents,
+  matplotlib PNG charts (daily bars, calendar heatmap, top tasks, trend).

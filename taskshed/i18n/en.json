@@ -72,5 +72,10 @@
   "lang_set": "Language: English",
   
 
-  "digest_where": "📍 Where are you now?"
+  "digest_where": "📍 Where are you now?",
+  "chart_daily": "Completion by day",
+  "chart_top": "Top tasks (completion rate, %)",
+  "chart_trend": "Weekly completion trend",
+  "chart_heat": "Calendar",
+  "w_done": "done", "w_missed": "missed", "w_pending": "pending"
 }

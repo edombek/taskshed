@@ -32,10 +32,10 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Digest with ✅ / ⏭ buttons; user reminder settings (times/interval,
       quiet hours, location TTL)
 
-## Stage 4 — Statistics
-- [ ] Aggregations in `core/stats.py` (by day / task / place / period)
-- [ ] Text report; CSV & XLSX export
-- [ ] matplotlib PNG charts (Agg): daily bars, calendar heatmap,
+## Stage 4 — Statistics ✅
+- [x] Aggregations in `core/stats.py` (by day / task / place / period)
+- [x] Text report; CSV & XLSX export
+- [x] matplotlib PNG charts (Agg): daily bars, calendar heatmap,
       top tasks/places, completion trend
 
 ## Stage 5 — VK adapter + account linking

@@ -214,16 +214,20 @@ class BotApp:
                 fmt = token
         days = PERIODS[period]
         now = datetime.now(UTC)
-        start = (now - timedelta(days=days)) if days else datetime(2000, 1, 1, tzinfo=UTC)
-        occs = await self.store.occurrences_in_range(ctx.user.id, start, now)
-        past = [(o, task) for o, task in occs if o.due_at <= now]
+        # +1 day so today's still-future EOD deadlines belong to the period
+        end = now + timedelta(days=1)
+        start = (end - timedelta(days=days)) if days else datetime(2000, 1, 1, tzinfo=UTC)
+        occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
+        past = [(o, task) for o, task in occs if o.due_at <= now or o.status == "done"]
         if not past:
             await ctx.reply(t("stats_no_data", ctx.lang))
             return
         if fmt in ("csv", "xlsx", "график", "chart"):
-            await self._stats_file(ctx, start, now, period, fmt)
-            return
-        await ctx.reply(self._stats_text(ctx, past, period))
+            await self._stats_file(ctx, past, period, fmt)
+        else:
+            await ctx.reply(self._stats_text(ctx, past, period))
+            if ctx.settings.stats_format != "text":
+                await self._stats_file(ctx, past, period, "chart")
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
         if not arg:
@@ -265,7 +269,7 @@ class BotApp:
     async def _cmd_reminders(self, ctx: Ctx, _: str) -> None:
         await self._rem_status(ctx)
 
-    async def _stats_text(self, ctx: Ctx, past, period: str) -> str:
+    def _stats_text(self, ctx: Ctx, past, period: str) -> str:
         agg: dict[int, dict] = {}
         for occ, task in past:
             a = agg.setdefault(task.id, {"title": task.title, "done": 0, "missed": 0, "total": 0})
@@ -281,9 +285,40 @@ class BotApp:
                            missed=a["missed"], total=a["total"], percent=pct))
         return "\n".join(lines)
 
-    async def _stats_file(self, ctx: Ctx, start, now, period: str, fmt: str) -> None:
-        # implemented in stage 4 (stats module)
-        await ctx.reply(t("unknown_cmd", ctx.lang))
+    async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str) -> None:
+        import os
+        import shutil
+        import tempfile
+
+        from taskshed.core import stats as sagg
+        from taskshed.stats import charts, export
+
+        tmp = tempfile.mkdtemp(prefix="taskshed_stats_")
+        try:
+            task_rows = sagg.per_task(past)
+            place_names = {p.id: p.name for p in await self.store.list_places(ctx.user.id)}
+            place_rows = sagg.per_place(past, place_names)
+            days = sagg.per_day(past, ctx.settings.tz)
+            if fmt == "csv":
+                path = os.path.join(tmp, "stats.csv")
+                export.write_csv(task_rows, path)
+                await ctx.messenger.send_document(
+                    ctx.account, path, "stats.csv", t("stats_sent_doc", ctx.lang))
+            elif fmt == "xlsx":
+                path = os.path.join(tmp, "stats.xlsx")
+                export.write_xlsx(task_rows, place_rows, path)
+                await ctx.messenger.send_document(
+                    ctx.account, path, "stats.xlsx", t("stats_sent_doc", ctx.lang))
+            else:  # chart
+                png = os.path.join(tmp, "stats.png")
+                produced = charts.daily_bar(days, ctx.lang, png)
+                if not produced:
+                    await ctx.reply(t("stats_no_data", ctx.lang))
+                    return
+                await ctx.messenger.send_image(ctx.account, produced,
+                                               t("stats_sent_doc", ctx.lang))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     # ---------- wizard ----------
 

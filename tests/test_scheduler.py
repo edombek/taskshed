@@ -22,7 +22,8 @@ async def env():
     await store.create_all()
     fake = FakeMessenger()
     app = BotApp(store, BotCfg(), {"telegram": fake})
-    return app, store, fake
+    yield app, store, fake
+    await store._engine.dispose()
 
 
 async def setup_user(store, anchor_today=True, place="Дом", with_task=True, ttl_hours=6):

@@ -14,7 +14,8 @@ from taskshed.storage.repositories import Store
 async def store():
     st = Store(make_engine("sqlite+aiosqlite:///:memory:"))
     await st.create_all()
-    return st
+    yield st
+    await st._engine.dispose()
 
 
 async def make_user(store, places=("Дом", "Работа")):

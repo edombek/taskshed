@@ -22,7 +22,8 @@ async def env():
     fake = FakeMessenger()
     vk_fake = FakeMessenger("vk")
     app = BotApp(store, BotCfg(), {"telegram": fake, "vk": vk_fake})
-    return app, store, fake
+    yield app, store, fake
+    await store._engine.dispose()
 
 
 async def send(env, text=None, cb=None, pid=PID, platform="telegram"):
@@ -153,6 +154,29 @@ class TestWhereAndTasks:
         f = await send(env, cb=f"place:{pid_home}")
         # tasks list followed the location answer
         assert "нет" in f.texts()[0].lower() or "Задачи" in f.texts()[0]
+
+
+class TestStatsCommands:
+    async def test_text_csv_chart(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid_home = await place_id_of(store, user.id, "Дом")
+        today = datetime.now(UTC).date()
+        task = await store.create_task(user.id, pid_home, "Отчёт",
+                                       ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": today.isoformat()},
+                                       datetime.now(UTC).timetz().replace(second=0,
+                                                                          microsecond=0))
+        await store.materialize_occurrences(task, today, 0, "UTC")
+        occ, _ = (await store.occurrences_today(user.id, today, "UTC"))[0]
+        await store.mark_done(occ.id, "telegram")
+        f = await send(env, "/статистика неделя")
+        assert "Отчёт" in f.texts()[0] and "100%" in f.texts()[0]
+        f = await send(env, "/статистика всё csv")
+        assert f.sent[-1].document and f.sent[-1].document.endswith(".csv")
+        f = await send(env, "/статистика месяц график")
+        assert f.sent[-1].image and f.sent[-1].image.endswith(".png")
 
 
 class TestLinking:
