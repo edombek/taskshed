@@ -12,7 +12,7 @@ sequenceDiagram
     U->>VK: /link K3F9A2B7
     VK->>Core: redeem_link_code
     alt code valid & fresh & unused
-        Core->>Core: mark used; attach_account(vk → owner's user)
+        Core->>Core: mark used, attach_account(vk → owner's user)
         Core->>Core: merge_user(vk's old user → owner):<br/>places/tasks moved, name clashes renamed "#2",<br/>old settings/location deleted
         Core->>Core: link_audit rows: link, merge
         Core-->>VK: OK
