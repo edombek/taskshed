@@ -26,7 +26,7 @@ Checklist of the implementation roadmap. EN summary in
 - [x] CI test: ru/en catalog key parity
 
 ## Stage 3 — Reminder scheduler ✅
-- [x] Minute tick in user timezone (asyncio loop; APScheduler left out as dep-only)
+- [x] Minute tick in user timezone (asyncio loop; APScheduler dropped entirely)
 - [x] Silence rules: no tasks today / no tasks for current place → no message
 - [x] Stale location → "Where are you?" place buttons, then digest
 - [x] Digest with ✅ / ⏭ buttons; user reminder settings (times/interval,
