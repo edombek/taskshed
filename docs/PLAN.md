@@ -55,4 +55,5 @@ Checklist of the implementation roadmap. EN summary in
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
 - Task-creation wizard state is in-memory (lost on restart).
+- Merge on `/link` runs without a confirmation preview of the two sides.
 - PostgreSQL driver (`asyncpg`) not exercised in CI yet.

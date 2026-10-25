@@ -1,31 +1,35 @@
 sequenceDiagram
     autonumber
-    participant Sch as Scheduler (minute tick)
-    participant Core as core + storage
-    participant Msg as Messenger port
+    participant Sch as run_tick (every 60s, UTC now)
+    participant Core as BotApp + Store
+    participant Msg as Messenger port<br/>(notify_user → all/primary accounts)
     participant U as User (TG/VK)
 
-    Sch->>Core: for each user (in user tz)
-    Core->>Core: reminders_on? not in quiet hours?<br/>next remind moment reached?
-    alt no trigger moment
-        Core-->>Sch: silent
+    Sch->>Core: mark_overdue(now): pending past due → missed
+    loop per user (in user tz)
+        Core->>Core: reminders_on? materialize horizon;<br/>trigger moment reached (times/interval)? quiet hours?
+        alt no trigger / quiet / reminders off
+            Core-->>Sch: silent
+        end
+        Core->>Core: occurrences due today (any place)
+        alt none
+            Core-->>Sch: silent (no message at all)
+        end
+        Core->>Core: current_location fresh? (set_at + ttl > now)
+        alt stale or unset
+            Core->>Msg: "Where are you now?" + place buttons<br/>(once: pending_reminder=true, last_reminded_at=now)
+            Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] …
+            U->>Msg: tap place:<id>
+            Msg->>Core: set location, pending_reminder=false
+            Core->>Msg: digest follows immediately
+        else fresh
+            Core->>Core: digest = today's occurrences at that place
+            alt empty
+                Core-->>Sch: silent
+            end
+        end
+        Core->>Msg: digest text + per-task buttons
+        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭]<br/>2. Созвон — до 12:00 ⚠️просрочено [✅][⏭]
     end
-    Core->>Core: pending occurrences due today (any place)
-    alt no tasks today
-        Core-->>Sch: silent (no message at all)
-    end
-    Core->>Core: current_location fresh (now - set_at < TTL)?
-    alt stale or unset
-        Core->>Msg: ask_choice("Where are you now?", places)
-        Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] …
-        U->>Msg: tap place
-        Msg->>Core: save current_location
-    end
-    Core->>Core: filter occurrences by current place
-    alt no tasks for this place
-        Core-->>Sch: silent
-    end
-    Core->>Msg: digest text + buttons
-    Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт ⏰18:00 [✅][⏭]<br/>2. Созвон ⏰12:00 [✅][⏭]
-    U->>Msg: ✅ task 1
-    Msg->>Core: occurrence → done, completions row
+    U->>Msg: ✅ done:<occId> (any linked chat)
+    Msg->>Core: ownership check → status=done + completions row

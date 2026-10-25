@@ -8,14 +8,14 @@ Component diagram: [architecture.mmd](../diagrams/architecture.mmd) ·
 
 Hexagonal (ports & adapters). `taskshed/core` contains pure domain logic and
 knows nothing about Telegram or VK. Each platform is an adapter that
-(1) translates raw platform events into a platform-independent `Command`
+(1) translates raw platform events into a platform-independent `RawEvent`
 (messages and button presses), and (2) implements the `IMessenger` port
-(`send_text`, `send_image`, `send_document`, `ask_choice`). Chat logic
-(`bot/handlers.py`) and the reminder scheduler (`scheduler/jobs.py`) work only
-with `Command` / `IMessenger`.
+(`send_text`, `send_buttons`, `send_image`, `send_document`). Chat logic
+(`bot/app.py::BotApp`) and the reminder scheduler (`scheduler/jobs.py`) work
+only with `RawEvent` / `IMessenger`.
 
 Consequences that matter for tests: the whole bot can run in unit tests
-against `messaging/fake.py::FakeMessenger` and an in-memory SQLite database —
+against `messaging/base.py::FakeMessenger` and an in-memory SQLite database —
 no network, no real platforms.
 
 ## Module map
@@ -26,8 +26,8 @@ no network, no real platforms.
 | `taskshed/core/scheduling.py` | schedule rules → occurrence datetimes; materialization; overdue pass |
 | `taskshed/core/stats.py` | period aggregations (day/task/place) |
 | `taskshed/storage/` | SQLAlchemy async ORM tables + repositories, Alembic migrations |
-| `taskshed/messaging/` | port (`base.py`) + `telegram.py`, `vk.py`, `fake.py` |
-| `taskshed/bot/handlers.py` | chat commands, dialogs/wizards, buttons |
+| `taskshed/messaging/` | port + `FakeMessenger` (`base.py`) + `telegram.py`, `vk.py` |
+| `taskshed/bot/app.py` | `BotApp`: chat commands, dialogs/wizards, buttons |
 | `taskshed/scheduler/jobs.py` | per-minute reminder tick, silence rules |
 | `taskshed/stats/` | matplotlib charts, CSV/XLSX export |
 | `taskshed/i18n/` | ru/en JSON catalogs + `t()` |
@@ -60,9 +60,10 @@ See the [sequence diagram](../diagrams/reminder-flow.mmd). Hard rules:
 ### Account linking
 
 See the [sequence diagram](../diagrams/linking-flow.mmd). `/link` mints a
-one-time 8-char code (10 min TTL); the other platform redeems it. Merging two
-non-empty users shows a preview and requires confirmation; the operation is
-audited in `link_audit`.
+one-time 8-char code (10 min TTL, one active per user); the other platform
+redeems it. The redeeming account moves to the code owner and its previous
+user is merged in automatically (name clashes renamed `#2`); every step is
+audited in `link_audit`. A confirmation preview before merge is on the backlog.
 
 ## Configuration
 

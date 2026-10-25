@@ -6,74 +6,86 @@ erDiagram
     users ||--o{ tasks : "owns"
     places ||--o{ tasks : "groups"
     tasks ||--o{ task_occurrences : "materialized repeats"
-    task_occurrences |o--|| completions : "marked done"
+    task_occurrences |o--o| completions : "marked done"
     users ||--o{ link_codes : "one-time link codes"
+    users ||--o{ link_audit : "link/unlink/merge trail"
 
     users {
         int id PK
         datetime created_at
         string language "ru|en"
-        json state_json "wizard state"
+        json state_json "reserved (wizard state is in-memory)"
     }
     accounts {
         int id PK
         int user_id FK
         string platform "telegram|vk"
-        string platform_user_id
+        string platform_user_id "UNIQUE(platform, platform_user_id)"
         datetime linked_at
+        datetime last_seen "nullable; picks primary account"
     }
     places {
         int id PK
         int user_id FK
-        string name
+        string name "UNIQUE(user_id, name)"
     }
     current_location {
         int user_id PK_FK
         int place_id FK
-        datetime set_at
+        datetime set_at "UTC; freshness = set_at + ttl"
+    }
+    user_settings {
+        int user_id PK_FK
+        bool reminders_on
+        string remind_mode "times|interval"
+        json remind_times "HH:MM list, user tz"
+        int remind_interval_min
+        string quiet_start "HH:MM"
+        string quiet_end "HH:MM"
+        int location_ttl_hours
+        string tz
+        string notify_platforms "all|primary"
+        string stats_format "both|text|image"
+        datetime last_reminded_at "nullable"
+        bool pending_reminder "digest awaiting location answer"
     }
     tasks {
         int id PK
         int user_id FK
         int place_id FK
         string title
-        string note
-        datetime deadline
+        text note
+        datetime deadline "only for schedule once"
         string schedule_type "once|every_n_days|weekdays|monthly_day"
         json schedule_data
-        string reminder_time "HH:MM"
+        string reminder_time "HH:MM user tz"
         bool is_active
+        datetime created_at
     }
     task_occurrences {
         int id PK
-        int task_id FK
-        datetime due_at "deadline of this repeat"
-        datetime reminder_at "when to remind"
+        int task_id FK "UNIQUE(task_id, due_at)"
+        datetime due_at "deadline of this repeat, UTC"
+        datetime reminder_at "when the reminder may fire"
         string status "pending|done|missed"
     }
     completions {
-        int id PK
-        int occurrence_id FK
+        int occurrence_id PK_FK
         datetime done_at
         string completed_via "telegram|vk"
     }
-    user_settings {
-        int user_id PK_FK
-        bool reminders_on
-        string remind_mode "times|interval"
-        json remind_times
-        int remind_interval_min
-        string quiet_start
-        string quiet_end
-        int location_ttl_hours
-        string tz
-        string notify_platforms "all|primary"
-        string stats_format "both|text|image"
-        datetime last_reminded_at
-    }
     link_codes {
-        string code PK
+        string code PK "8 chars, one active per user"
         int user_id FK
-        datetime expires_at
+        string created_by_platform
+        datetime created_at
+        datetime expires_at "TTL 10 min"
         bool used
+    }
+    link_audit {
+        int id PK
+        int user_id FK
+        string action "link|unlink|merge"
+        text detail
+        datetime at
     }

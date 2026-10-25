@@ -5,35 +5,40 @@ graph LR
     end
 
     subgraph Adapters
-        TGA[taskshed/messaging/telegram.py<br/>Telethon + MTProto proxy]
-        VKA[taskshed/messaging/vk.py<br/>Bot Long Poll, aiohttp]
-        FAKE[taskshed/messaging/fake.py<br/>FakeMessenger for tests]
+        TGA[messaging/telegram.py<br/>Telethon start_bot + MTProxy]
+        VKA[messaging/vk.py<br/>Bot Long Poll, aiohttp]
     end
 
+    EP[entrypoints/common.py<br/>wiring: run_telegram / run_vk / run_all]
+
     subgraph Port["Messenger port (messaging/base.py)"]
-        P[IMessenger / Command]
+        P[IMessenger / RawEvent]
+        FAKE[FakeMessenger — tests]
     end
 
     subgraph Core
-        H[bot/handlers.py<br/>chat command handling]
-        C[core/<br/>domain · scheduling · stats]
-        S[scheduler/jobs.py<br/>reminder tick]
-        ST[stats/charts.py · export.py<br/>PNG · CSV · XLSX]
-        I[i18n/<br/>ru.json en.json]
+        H[bot/app.py BotApp<br/>commands · wizards · buttons]
+        C[core/<br/>models · scheduling · stats]
+        S[scheduler/jobs.py<br/>minute tick, silence rules]
+        ST[stats/charts.py · stats/export.py<br/>PNG · CSV · XLSX]
+        I[i18n/ ru.json en.json]
     end
 
-    subgraph Storage["storage/ (SQLAlchemy async)"]
-        R[repositories]
+    subgraph Storage["storage/ (SQLAlchemy async + Alembic)"]
+        R[repositories.Store]
         DB[(SQLite / PostgreSQL)]
     end
 
     TG --> TGA --> P
     VK --> VKA --> P
-    FAKE --> P
+    FAKE -.tests only.-> P
+    EP -->|builds| TGA
+    EP -->|builds| VKA
+    EP -->|starts| S
     P --> H --> C
     S --> C
-    S -->|digest| P
+    S -->|digest / ask-where| P
     C --> R --> DB
-    C --> ST
+    H --> ST
     H --> I
     S --> I
