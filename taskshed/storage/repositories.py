@@ -145,7 +145,8 @@ class Store:
                 select(Account).where(Account.user_id == user_id)
             )).all()
             return [
-                AccountDC(r.id, r.user_id, r.platform, r.platform_user_id, _aware(r.linked_at))
+                AccountDC(r.id, r.user_id, r.platform, r.platform_user_id,
+                          _aware(r.linked_at), _aware(r.last_seen))
                 for r in rows
             ]
 
@@ -177,6 +178,12 @@ class Store:
         async with self._sf() as s:
             row = await s.get(User, user_id)
             return row.state_json if row else None
+
+    async def touch_account(self, account_id: int) -> None:
+        async with self._sf() as s:
+            await s.execute(update(Account).where(Account.id == account_id)
+                            .values(last_seen=_naive(datetime.now(UTC))))
+            await s.commit()
 
     async def all_user_ids(self) -> list[int]:
         async with self._sf() as s:

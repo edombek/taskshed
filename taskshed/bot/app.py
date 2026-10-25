@@ -104,6 +104,7 @@ class BotApp:
                 )
                 account = await self.store.get_account_by_key(ev.platform, ev.platform_user_id)
         settings = await self.store.get_settings(user.id)
+        await self.store.touch_account(account.id)
         ctx = Ctx(self, ev, user, account, settings, messenger)
         try:
             if ev.callback:
@@ -562,11 +563,12 @@ class BotApp:
 
     async def notify_user(self, user_id: int, text: str,
                           buttons: ButtonRows | None = None) -> None:
-        """Send to every (or primary) linked account of the user."""
+        """Send to every linked account (or the most recently active one)."""
         settings = await self.store.get_settings(user_id)
-        for acc in await self.store.get_accounts(user_id):
-            if settings.notify_platforms == "primary":
-                continue  # no fresh origin known; primary handled on events
+        accounts = await self.store.get_accounts(user_id)
+        if settings.notify_platforms == "primary":
+            accounts = sorted(accounts, key=lambda a: a.last_seen or a.linked_at)[-1:]
+        for acc in accounts:
             messenger = self.messengers.get(acc.platform)
             if messenger:
                 if buttons:

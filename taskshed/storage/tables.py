@@ -45,6 +45,7 @@ class Account(Base):
     platform: Mapped[str] = mapped_column(String(10))
     platform_user_id: Mapped[str] = mapped_column(String(64))
     linked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class UserSettings(Base):

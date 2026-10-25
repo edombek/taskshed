@@ -2,13 +2,11 @@
 
 ## State of the repo
 
-Stages 0–3 committed on `main`: bootstrap, core+storage+Alembic, messenger
-port + `FakeMessenger` + i18n + `bot/app.py` + Telethon adapter, reminder
-scheduler (`scheduler/jobs.py`, asyncio loop — APScheduler unused). 39 tests
-pass. `docs/PLAN.md` is the living checklist. Not implemented yet at time of
-writing: VK adapter, stats module (CSV/XLSX/charts), `stats/` package,
-`entrypoints/`. Do not assume files listed only in `docs/en/architecture.md`
-module map exist until verified.
+All plan stages (0–6) implemented and pushed; 56 tests green; ruff clean.
+Everything in the `docs/en/architecture.md` module map now exists (VK adapter
+in `messaging/vk.py`, stats in `core/stats.py` + `stats/`, entrypoints in
+`entrypoints/`). `docs/PLAN.md` is the living checklist; backlog items are
+listed at its bottom.
 
 ## Commands
 

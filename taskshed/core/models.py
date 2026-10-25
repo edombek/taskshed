@@ -43,6 +43,7 @@ class Account:
     platform: Platform
     platform_user_id: str
     linked_at: datetime
+    last_seen: datetime | None = None
 
 
 @dataclass(slots=True)

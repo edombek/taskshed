@@ -79,6 +79,10 @@ ruff check . && pytest      # lint + tests (all chat tests use FakeMessenger —
 - Plan & roadmap: [`docs/PLAN.md`](docs/PLAN.md)
 - Architecture (EN/RU): [`docs/en/architecture.md`](docs/en/architecture.md) ·
   [`docs/ru/architecture.md`](docs/ru/architecture.md)
+- Configuration: [`docs/en/configuration.md`](docs/en/configuration.md) ·
+  [`docs/ru/configuration.md`](docs/ru/configuration.md)
+- Account linking: [`docs/en/linking.md`](docs/en/linking.md) ·
+  [`docs/ru/linking.md`](docs/ru/linking.md)
 - Diagrams: [`docs/diagrams/`](docs/diagrams/)
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 

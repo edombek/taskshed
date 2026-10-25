@@ -81,6 +81,10 @@ ruff check . && pytest      # линт + тесты (чат-тесты идут 
 - План и дорожная карта: [`docs/PLAN.md`](docs/PLAN.md)
 - Архитектура (EN/RU): [`docs/en/architecture.md`](docs/en/architecture.md) ·
   [`docs/ru/architecture.md`](docs/ru/architecture.md)
+- Конфигурация: [`docs/en/configuration.md`](docs/en/configuration.md) ·
+  [`docs/ru/configuration.md`](docs/ru/configuration.md)
+- Привязка аккаунтов: [`docs/en/linking.md`](docs/en/linking.md) ·
+  [`docs/ru/linking.md`](docs/ru/linking.md)
 - Диаграммы: [`docs/diagrams/`](docs/diagrams/)
 - История изменений: [`CHANGELOG.md`](CHANGELOG.md)
 

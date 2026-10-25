@@ -18,3 +18,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   digest fan-out to linked accounts, per-user reminder settings.
 - (Stage 4) Statistics: aggregations, text report, CSV/XLSX documents,
   matplotlib PNG charts (daily bars, calendar heatmap, top tasks, trend).
+- (Stage 5) VK community bot adapter (Bot Long Poll, inline keyboards,
+  photo/document upload, http/socks5 proxy); account linking with
+  `/link`/`/unlink` and data merge via `link_audit`.
+- (Stage 6) `run_telegram` / `run_vk` / `run_all` entrypoints; reminder
+  fan-out to linked accounts with `notify_platforms=all|primary`
+  (accounts.last_seen); Alembic migration for `accounts.last_seen`.

@@ -38,17 +38,19 @@ Checklist of the implementation roadmap. EN summary in
 - [x] matplotlib PNG charts (Agg): daily bars, calendar heatmap,
       top tasks/places, completion trend
 
-## Stage 5 — VK adapter + account linking
-- [ ] VK Bot Long Poll over aiohttp (no heavy framework dependency)
-- [ ] VK keyboards, text stats, documents; proxy (http/socks5)
-- [ ] `/link` one-time code flow (RU: `/привязать`), `/unlink`, merge
-      confirmation when both accounts already have data
+## Stage 5 — VK adapter + account linking ✅
+- [x] VK Bot Long Poll over aiohttp (no heavy framework dependency)
+- [x] VK keyboards, text stats, documents/photos (best-effort upload); proxy
+      (http/socks5)
+- [x] `/link` one-time code flow (RU: `/привязать`), `/unlink`, merge
+      (places/tasks moved, name clashes renamed, `link_audit` trail)
 
-## Stage 6 — Hardening & docs
-- [ ] Parallel run of both platforms (`run_all`)
-- [ ] Reminder fan-out to linked accounts, `notify_platforms` setting
-- [ ] Final bilingual docs with diagrams and examples
-- [ ] `CHANGELOG.md` up to date
+## Stage 6 — Hardening & docs ✅
+- [x] Parallel run of both platforms (`run_all`)
+- [x] Reminder fan-out to linked accounts, `notify_platforms` setting
+      (accounts.last_seen picks the primary)
+- [x] Final bilingual docs with diagrams and examples
+- [x] `CHANGELOG.md` up to date
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

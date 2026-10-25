@@ -179,6 +179,25 @@ class TestStatsCommands:
         assert f.sent[-1].image and f.sent[-1].image.endswith(".png")
 
 
+class TestFanout:
+    async def test_all_vs_primary(self, env):
+        app, store, fake = env
+        user, _ = await store.register_account("telegram", PID)
+        vk_user, vk_acc = await store.register_account("vk", "999")
+        await store.attach_account(vk_acc, user.id)
+        await store.merge_user(vk_user.id, user.id)
+        text, buttons = "📋 digest", [[("✅", "done:1")]]
+        await app.notify_user(user.id, text, buttons)  # notify_platforms=all default
+        assert any(m.text == text for m in fake.sent)
+        assert any(m.text == text for m in app.messengers["vk"].sent)
+        app.messengers["vk"].clear()
+        fake.clear()
+        await store.update_settings(user.id, notify_platforms="primary")
+        await app.handle(RawEvent("vk", "999", text="/start"))  # vk becomes most recent
+        await app.notify_user(user.id, text, buttons)
+        assert app.messengers["vk"].sent and not fake.sent
+
+
 class TestLinking:
     async def test_link_code_flow_across_platforms(self, env):
         app, store, fake = env
