@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    participant Sch as Scheduler (minute tick)
+    participant Core as core + storage
+    participant Msg as Messenger port
+    participant U as User (TG/VK)
+
+    Sch->>Core: for each user (in user tz)
+    Core->>Core: reminders_on? not in quiet hours?<br/>next remind moment reached?
+    alt no trigger moment
+        Core-->>Sch: silent
+    end
+    Core->>Core: pending occurrences due today (any place)
+    alt no tasks today
+        Core-->>Sch: silent (no message at all)
+    end
+    Core->>Core: current_location fresh (now - set_at < TTL)?
+    alt stale or unset
+        Core->>Msg: ask_choice("Where are you now?", places)
+        Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] …
+        U->>Msg: tap place
+        Msg->>Core: save current_location
+    end
+    Core->>Core: filter occurrences by current place
+    alt no tasks for this place
+        Core-->>Sch: silent
+    end
+    Core->>Msg: digest text + buttons
+    Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт ⏰18:00 [✅][⏭]<br/>2. Созвон ⏰12:00 [✅][⏭]
+    U->>Msg: ✅ task 1
+    Msg->>Core: occurrence → done, completions row

@@ -1,0 +1,79 @@
+erDiagram
+    users ||--o{ accounts : "identity per platform"
+    users ||--|| user_settings : "reminder prefs"
+    users ||--o{ places : "defines"
+    users |o--o| current_location : "where am I now"
+    users ||--o{ tasks : "owns"
+    places ||--o{ tasks : "groups"
+    tasks ||--o{ task_occurrences : "materialized repeats"
+    task_occurrences |o--|| completions : "marked done"
+    users ||--o{ link_codes : "one-time link codes"
+
+    users {
+        int id PK
+        datetime created_at
+        string language "ru|en"
+        json state_json "wizard state"
+    }
+    accounts {
+        int id PK
+        int user_id FK
+        string platform "telegram|vk"
+        string platform_user_id
+        datetime linked_at
+    }
+    places {
+        int id PK
+        int user_id FK
+        string name
+    }
+    current_location {
+        int user_id PK_FK
+        int place_id FK
+        datetime set_at
+    }
+    tasks {
+        int id PK
+        int user_id FK
+        int place_id FK
+        string title
+        string note
+        datetime deadline
+        string schedule_type "once|every_n_days|weekdays|monthly_day"
+        json schedule_data
+        string reminder_time "HH:MM"
+        bool is_active
+    }
+    task_occurrences {
+        int id PK
+        int task_id FK
+        datetime due_at "deadline of this repeat"
+        datetime reminder_at "when to remind"
+        string status "pending|done|missed"
+    }
+    completions {
+        int id PK
+        int occurrence_id FK
+        datetime done_at
+        string completed_via "telegram|vk"
+    }
+    user_settings {
+        int user_id PK_FK
+        bool reminders_on
+        string remind_mode "times|interval"
+        json remind_times
+        int remind_interval_min
+        string quiet_start
+        string quiet_end
+        int location_ttl_hours
+        string tz
+        string notify_platforms "all|primary"
+        string stats_format "both|text|image"
+        datetime last_reminded_at
+    }
+    link_codes {
+        string code PK
+        int user_id FK
+        datetime expires_at
+        bool used
+    }

@@ -1,0 +1,32 @@
+# Copy to config.yaml and fill in real values. config.yaml is gitignored.
+database:
+  # sqlite by default; for PostgreSQL use:
+  # url: postgresql+asyncpg://user:pass@host/taskshed
+  url: sqlite+aiosqlite:///taskshed.db
+
+platforms:
+  telegram:
+    enabled: true
+    api_id: 123456            # from https://my.telegram.org
+    api_hash: "0123456789abcdef0123456789abcdef"
+    bot_token: "123456:ABC..."  # from @BotFather
+    # MTProto proxy (optional). type: mtproxy | securedmtproxy
+    proxy:
+      type: mtproxy
+      ip: "1.2.3.4"
+      port: 443
+      secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+  vk:
+    enabled: false
+    group_token: "vk1.a.xxxxx"   # community access token (offline)
+    group_id: 123456789
+    # Regular HTTP/SOCKS5 proxy (optional) — MTProxy does not apply to VK API.
+    proxy:
+      type: socks5
+      url: "socks5://user:pass@host:1080"
+
+bot:
+  default_language: ru
+  # materialize task occurrences this many days ahead
+  occurrence_horizon_days: 8

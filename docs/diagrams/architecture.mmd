@@ -1,0 +1,39 @@
+graph LR
+    subgraph Platforms
+        TG[Telegram]
+        VK[VK]
+    end
+
+    subgraph Adapters
+        TGA[taskshed/messaging/telegram.py<br/>Telethon + MTProto proxy]
+        VKA[taskshed/messaging/vk.py<br/>Bot Long Poll, aiohttp]
+        FAKE[taskshed/messaging/fake.py<br/>FakeMessenger for tests]
+    end
+
+    subgraph Port["Messenger port (messaging/base.py)"]
+        P[IMessenger / Command]
+    end
+
+    subgraph Core
+        H[bot/handlers.py<br/>chat command handling]
+        C[core/<br/>domain · scheduling · stats]
+        S[scheduler/jobs.py<br/>reminder tick]
+        ST[stats/charts.py · export.py<br/>PNG · CSV · XLSX]
+        I[i18n/<br/>ru.json en.json]
+    end
+
+    subgraph Storage["storage/ (SQLAlchemy async)"]
+        R[repositories]
+        DB[(SQLite / PostgreSQL)]
+    end
+
+    TG --> TGA --> P
+    VK --> VKA --> P
+    FAKE --> P
+    P --> H --> C
+    S --> C
+    S -->|digest| P
+    C --> R --> DB
+    C --> ST
+    H --> I
+    S --> I

@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    participant U as Owner (already registered)
+    participant TG as Telegram bot
+    participant Core as core + storage
+    participant VK as VK bot
+
+    U->>TG: /link
+    TG->>Core: create link_code (8 chars, TTL 10 min, one-time)
+    Core-->>TG: K3F9A2B7
+    TG-->>U: "Send to the VK bot: /link K3F9A2B7"
+    U->>VK: /link K3F9A2B7
+    VK->>Core: redeem code
+    alt code valid & fresh & VK account unknown
+        Core->>Core: accounts(vk) → owner's users row
+        Core-->>VK: OK
+        VK-->>U: "Accounts linked. Reminders now go to both chats."
+    else code expired/used
+        Core-->>VK: error
+        VK-->>U: "Code invalid. Request a new one."
+    end
+    note over Core: If the VK account already owned its own tasks,<br/>a merge preview + confirmation is shown first.
