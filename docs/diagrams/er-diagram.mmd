@@ -30,12 +30,12 @@ erDiagram
         string name "UNIQUE(user_id, name)"
     }
     current_location {
-        int user_id PK_FK
+        int user_id PK "also FK to users"
         int place_id FK
         datetime set_at "UTC; freshness = set_at + ttl"
     }
     user_settings {
-        int user_id PK_FK
+        int user_id PK "also FK to users"
         bool reminders_on
         string remind_mode "times|interval"
         json remind_times "HH:MM list, user tz"
@@ -70,7 +70,7 @@ erDiagram
         string status "pending|done|missed"
     }
     completions {
-        int occurrence_id PK_FK
+        int occurrence_id PK "also FK to task_occurrences"
         datetime done_at
         string completed_via "telegram|vk"
     }
