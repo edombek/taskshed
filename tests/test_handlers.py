@@ -122,7 +122,8 @@ class TestWhereAndTasks:
         user = await store.get_user_by_account("telegram", PID)
         pid_home = await place_id_of(store, user.id, "Дом")
         f = await send(env, "/гдея")
-        assert prev_buttons(f)[0][0][1] == f"place:{pid_home}"
+        assert f.last_buttons()[0][0][1] == f"place:{pid_home}"
+        assert any(cb == "menu:back" for row in f.last_buttons() for _, cb in row)
         f = await send(env, cb=f"place:{pid_home}")
         assert "Текущее место: Дом" in f.texts()[0]
 
@@ -155,7 +156,7 @@ class TestWhereAndTasks:
         user = await store.get_user_by_account("telegram", PID)
         pid_home = await place_id_of(store, user.id, "Дом")
         f = await send(env, "/задачи")
-        assert prev_buttons(f)[0][0][1] == f"place:{pid_home}"
+        assert f.last_buttons()[0][0][1] == f"place:{pid_home}"
         f = await send(env, cb=f"place:{pid_home}")
         # tasks list followed the location answer
         assert "нет" in f.texts()[0].lower() or "Задачи" in f.texts()[0]
@@ -721,3 +722,29 @@ class TestReminderSettingsFlow:
         statuses = [m for m in fake.sent if "Напоминания:" in m.text]
         assert len(statuses) == 1
         assert fake.find("Не понял")
+
+
+class TestBackOnEveryPrompt:
+    async def test_rem_prompt_has_back_and_cancels_input(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await send(env, "/напоминания")
+        f = await send(env, cb="rem:ttl")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "menu:back" in flat
+        assert app._pending_inputs  # awaiting a value now
+        f = await send(env, cb="menu:back")
+        assert not app._pending_inputs
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat  # main menu returned
+        # a later number is no longer consumed as the ttl value
+        await send(env, "999")
+        user = await store.get_user_by_account("telegram", PID)
+        assert (await store.get_settings(user.id)).location_ttl_hours == 6
+
+    async def test_places_without_any_still_offers_back(self, env):
+        app, store, fake = env
+        await send(env, "/start")  # no places yet
+        f = await send(env, "/места")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert flat == ["menu:back"]

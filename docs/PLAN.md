@@ -95,6 +95,10 @@ Checklist of the implementation roadmap. EN summary in
 - [x] ⏭ Пропустить: closes an occurrence as `skipped` (no missed penalty,
       hidden from today's list, tracked separately in reports/heatmap,
       excluded from completion percent)
+- [x] ⬅️ Назад on every input-waiting prompt (Где я?, places, reminder
+      settings values, scheduler location question); Назад cancels the
+      awaited input; reminder settings edited in place, prompts explain
+      the expected value; localized heatmap labels
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

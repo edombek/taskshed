@@ -60,4 +60,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   date-only answer proceeds to time buttons; new **⏭ Пропустить** button in
   task lists/digests closes today's occurrence without a missed penalty —
   skipped shows up in the text report, CSV/XLSX columns and an orange
-  heatmap inset, and never counts against the completion percent.
+  heatmap inset, and never counts against the completion percent; every
+  prompt that waits for input (Где я?, place adding, reminder setting
+  values, the scheduler's stale-location question) carries a ⬅️ Назад
+  button that also cancels the awaited input; the buttons "Времена/
+  Интервал/Тихие часы/Частота опроса/Часовой пояс" now answer with a
+  concrete format hint (they used to swallow the tap), and setting changes
+  re-render the settings message in place instead of posting a copy;
+  heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).

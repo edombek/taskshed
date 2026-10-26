@@ -142,7 +142,7 @@ class Ctx:
                             extra_rows: ButtonRows | None = None) -> None:
         places = await self.app.store.list_places(self.user.id)
         if not places:
-            await self.reply(t("no_places", self.lang))
+            await self.reply(t("no_places", self.lang), extra_rows or None)
             return
         rows = [[(p.name, f"place:{p.id}")] for p in places] + (extra_rows or [])
         await self.reply(t(question_key, self.lang), rows)
@@ -260,16 +260,21 @@ class BotApp:
              (t("menu_stats", lang), "cmd:stats")],
         ]
 
+    def _back_only(self, ctx: Ctx) -> ButtonRows:
+        return [[(t("btn_back", ctx.lang), "menu:back")]]
+
     async def _cmd_where(self, ctx: Ctx, _: str) -> None:
         self._pending_inputs[ctx.user.id] = "where"
-        await ctx.place_buttons("where_question")
+        ctx.suppress_menu = True  # question + ⬅️ Назад is the whole reply
+        await ctx.place_buttons("where_question", self._back_only(ctx))
 
     async def _cmd_tasks(self, ctx: Ctx, _: str) -> None:
         await self.ensure_materialized(ctx)
         loc = await self.store.get_location(ctx.user.id)
         if loc is None:
             self._pending_inputs[ctx.user.id] = "tasks"
-            await ctx.place_buttons("where_question")
+            ctx.suppress_menu = True
+            await ctx.place_buttons("where_question", self._back_only(ctx))
             return
         place, _ = loc
         await self._send_task_list(ctx, place)
@@ -290,7 +295,8 @@ class BotApp:
                 rows,
             )
         else:
-            await ctx.reply(t("no_places", ctx.lang))
+            ctx.suppress_menu = True
+            await ctx.reply(t("no_places", ctx.lang), self._back_only(ctx))
         self.wizards[ctx.user.id] = {"kind": "addplace"}
 
     async def _cmd_delete(self, ctx: Ctx, arg: str) -> None:
@@ -657,6 +663,7 @@ class BotApp:
         elif action == "menu" and arg == "back":
             # submenu screens offer ⬅️ Назад: return to the main command menu
             self._rem_msgs.pop((ctx.user.id, ctx.account.id), None)
+            self._pending_inputs.pop(ctx.user.id, None)  # drop awaited inputs
             if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
                 self.wizards.pop(ctx.user.id, None)
             ctx.suppress_menu = True
@@ -923,7 +930,7 @@ class BotApp:
         if arg in ("times", "interval", "quiet", "ttl", "tz"):
             self._pending_inputs[ctx.user.id] = f"reminput:{arg}"
             ctx.suppress_menu = True  # the next message is the value itself
-            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang))
+            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang), self._back_only(ctx))
 
     async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
         values: dict = {}

@@ -116,6 +116,7 @@ async def _tick_user(app: BotApp, store: Store, user_id: int, now: datetime) -> 
     if user:
         lang = user.language
     rows = [[(p.name, f"place:{p.id}")] for p in places]
+    rows.append([(t("btn_back", lang), "menu:back")])
     await app.notify_user(user_id, t("digest_where", lang), rows)
     await store.update_settings(user_id, pending_reminder=True, last_reminded_at=now)
 
