@@ -186,7 +186,6 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                     frameon=False, bbox_to_anchor=(0.5, -0.02))
     for txt in leg.get_texts():
         txt.set_color(HEAT_TEXT)
-    ax.set_title(t("chart_heat", lang), fontsize=9, color=HEAT_TEXT, pad=12)
     fig.savefig(out_path, dpi=110, facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
     return out_path
