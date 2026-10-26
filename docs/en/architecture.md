@@ -106,6 +106,7 @@ erDiagram
         string tz
         string notify_platforms "all|primary"
         string stats_format "both|text|image"
+        int stats_horizon_days "chart lookahead, default 7"
         datetime last_reminded_at "nullable"
         bool pending_reminder "digest awaiting location answer"
     }
@@ -115,7 +116,8 @@ erDiagram
         int place_id FK
         string title
         text note
-        datetime deadline "only for schedule once"
+        datetime deadline "ready-by moment, nullable"
+        datetime start_at "work begins (once tasks), nullable"
         string schedule_type "once|every_n_days|weekdays|monthly_day"
         json schedule_data
         string reminder_time "HH:MM user tz"
@@ -127,7 +129,8 @@ erDiagram
         int task_id FK "UNIQUE(task_id, due_at)"
         datetime due_at "deadline of this repeat, UTC"
         datetime reminder_at "when the reminder may fire"
-        string status "pending|done|missed|skipped"
+        datetime start_at "work window opens (once tasks), nullable"
+        string status "pending|in_progress|done|missed|skipped"
     }
     completions {
         int occurrence_id PK "also FK to task_occurrences"
@@ -200,10 +203,15 @@ is what makes Telegram↔VK linking trivial.
 `schedule_type`: `once` · `every_n_days` · `weekdays` · `monthly_day`,
 parameters in `schedule_data` (JSON). Occurrences are materialized a few days
 ahead (`bot.occurrence_horizon_days`); each has `due_at`, `reminder_at`,
-`status ∈ {pending, done, missed, skipped}`. A background pass flips `pending`
-rows whose deadline passed to `missed`; a user-skipped occurrence becomes
-`skipped` — it is hidden from today's list, never turns into `missed` and
-does not count against the completion percent.
+`start_at`, `status ∈ {pending, in_progress, done, missed, skipped}`. A
+background pass flips `pending` rows whose deadline passed to `missed`; a
+user-skipped occurrence becomes `skipped` — it is hidden from today's list,
+never turns into `missed` and does not count against the completion percent.
+A one-off task is not a single instant: `tasks.start_at` opens a work window
+and `tasks.deadline` is the ready-by moment, so the row shows «from … to …»
+and appears in the list from its start day on. Tapping **▶ В работе** sets
+`in_progress`: the deadline stays, the row is never punished as missed, and
+it remains visible until done or skipped.
 
 ### Reminder tick
 
@@ -216,7 +224,7 @@ sequenceDiagram
     participant Msg as Messenger port<br/>(notify_user → all/primary accounts)
     participant U as User (TG/VK)
 
-    Sch->>Core: mark_overdue(now): pending past due → missed
+    Sch->>Core: mark_overdue(now): pending past due → missed<br/>(in_progress work stays open)
     loop per user (in user tz)
         Core->>Core: reminders_on? materialize horizon,<br/>trigger reached (times/interval<br/>or any occurrence reminder_at)? quiet hours?
         alt no trigger / quiet / reminders off
@@ -239,11 +247,12 @@ sequenceDiagram
                 Core-->>Sch: silent
             end
         end
-        Core->>Msg: digest text + per-task buttons
-        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭][⏭skip]<br/>2. Созвон — до 12:00 ⚠️просрочено [✅][⏭][⏭skip]
+        Core->>Msg: digest text + per-task buttons<br/>(older keyboards of this chat get disarmed)
+        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭][⏭skip]<br/>2. Полка — с 26.10 09:00 до 30.10 18:00 [✅][▶][⏭][⏭skip]<br/>3. Созвон — до 12:00 ⚠️просрочено [✅][⏭][⏭skip]
     end
     U->>Msg: "done:42" button (any linked chat)
     Msg->>Core: ownership check → status=done + completions row
+    U->>Msg: "wip:42" → status=in_progress: «▶ в работе»,<br/>row keeps its deadline but is never marked missed
     U->>Msg: "snooze:42" → duration buttons [15м][1ч][4ч][+сутки]
     U->>Msg: "snz:42:60" → reminder_at = now + 60 min
     U->>Msg: "skip:42" → status=skipped: hidden today,<br/>never flipped to missed, no penalty in stats

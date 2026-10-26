@@ -72,6 +72,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and its value are shown in Russian on the settings screen («Режим:
   по временам (09:00 13:00)»), and the prompts explain what the values
   mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
+- **Tasks stretched over time**: a one-off task is no longer a single instant —
+  the wizard asks «Когда приступить?» and «До какого времени закончить?»
+  (`tasks.start_at` + `tasks.deadline`, Alembic `f2a6b83c14d9`); lists and
+  digests show the whole window («с … до …») and offer **▶ В работе**, which
+  marks the occurrence `in_progress`: the deadline stays, but started work is
+  never flipped to `missed` and keeps showing until done or skipped.
 - **Stale keyboards are disarmed**: as soon as a newer answer arrives, every
   older inline keyboard in that chat is edited down to plain text, so only
   the current screen keeps buttons. Port-level convention:

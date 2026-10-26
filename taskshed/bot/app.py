@@ -516,6 +516,11 @@ class BotApp:
                  (t("btn_in_2_days", ctx.lang), "dt:2")]] + back)
         elif step == "whentime":
             await ctx.reply(t("wizard_ask_time", ctx.lang), TM_PRESETS + back)
+        elif step == "until":
+            await ctx.reply(t("wizard_ask_until", ctx.lang), [
+                [(t("btn_until_eod", ctx.lang), "dtl:eod")],
+                [(t("btn_until_next_day", ctx.lang), "dtl:next18"),
+                 (t("btn_until_week", ctx.lang), "dtl:week18")]] + back)
         elif step == "anchor":
             await ctx.reply(t("wizard_ask_anchor_date", ctx.lang), [
                 [(t("btn_today", ctx.lang), "dt:0"),
@@ -527,7 +532,14 @@ class BotApp:
         elif step == "days":
             await self._wd_buttons(ctx, w)
         elif step == "reminder":
-            await ctx.reply(t("wizard_ask_reminder", ctx.lang), REMINDER_TMS + back)
+            d = self._reminder_default(ctx, w)
+            presets = [[(f"⏎ {d:%H:%M}", f"tm:{d:%H:%M}")]] + REMINDER_TMS[1:]
+            await ctx.reply(t("wizard_ask_reminder", ctx.lang), presets + back)
+
+    def _reminder_default(self, ctx: Ctx, w: dict) -> time:
+        """A task stretched over time reminds by default when it begins."""
+        start = w["data"].get("start")
+        return start.astimezone(ctx.tz).time() if start else time(9, 0)
 
     async def _wizard_input(self, ctx: Ctx, w: dict, text: str) -> None:
         if w["kind"] == "addplace":
@@ -582,20 +594,23 @@ class BotApp:
                 self._goto(w, "whentime")
                 await self._ask_step(ctx, w)
                 return
-            deadline = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
-                                tzinfo=ctx.tz)
-            # guards the "2016 instead of 2026" typo: a once-task due before
-            # today would materialize nothing and silently never show up
-            if deadline.date() < datetime.now(ctx.tz).date():
+            start = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
+                             tzinfo=ctx.tz)
+            # guards the "2016 instead of 2026" typo: a once-task starting
+            # before today would materialize nothing and never show up
+            if start.date() < datetime.now(ctx.tz).date():
                 await ctx.reply(t("wizard_deadline_past", ctx.lang, hint=hint))
                 return
-            w["data"]["deadline"] = deadline
-            await self._wizard_ask_reminder(ctx, w)
+            w["data"]["start"] = start
+            self._goto(w, "until")
+            await self._ask_step(ctx, w)
         elif step == "whentime":
-            await self._set_deadline(ctx, w, w["data"]["picked_date"],
-                                     _parse_hhmm(text))
+            await self._set_start(ctx, w, w["data"]["picked_date"],
+                                  _parse_hhmm(text))
+        elif step == "until":
+            await self._set_until(ctx, w, text)
         elif step == "reminder":
-            rt = time(9, 0)
+            rt = self._reminder_default(ctx, w)
             if text.strip():
                 parsed = _parse_hhmm(text)
                 if parsed is None:
@@ -604,6 +619,51 @@ class BotApp:
                     return
                 rt = parsed
             await self._wizard_finish(ctx, w, rt)
+
+    async def _set_start(self, ctx: Ctx, w: dict, d: date,
+                         tval: time | None) -> None:
+        """Shared tail of start entry (button or typed HH:MM)."""
+        if tval is None:
+            await ctx.reply(t("wizard_bad_input", ctx.lang,
+                              hint=t("wizard_ask_time", ctx.lang)))
+            return
+        start = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
+                         tzinfo=ctx.tz)
+        if start.date() < datetime.now(ctx.tz).date():
+            await ctx.reply(t("wizard_deadline_past", ctx.lang,
+                              hint=t("wizard_ask_time", ctx.lang)))
+            return
+        w["data"]["start"] = start
+        self._goto(w, "until")
+        await self._ask_step(ctx, w)
+
+    async def _set_until(self, ctx: Ctx, w: dict, text: str) -> None:
+        """Ready-by moment; Enter means "end of the day it starts on"."""
+        hint = t("wizard_ask_until", ctx.lang)
+        start = w["data"]["start"]
+        if not text.strip():
+            w["data"]["deadline"] = self._end_of_day(start, ctx.tz)
+            await self._wizard_ask_reminder(ctx, w)
+            return
+        dpart, tsrc = _split_date_time(text)
+        d = _parse_date(dpart, datetime.now(ctx.tz).date())
+        tval = _parse_hhmm(tsrc) if tsrc else None
+        if d is None or (tsrc is not None and tval is None):
+            await ctx.reply(t("wizard_bad_input", ctx.lang, hint=hint))
+            return
+        until = datetime(d.year, d.month, d.day,
+                         tval.hour if tval else 23, tval.minute if tval else 59,
+                         tzinfo=ctx.tz)
+        if until <= start:
+            await ctx.reply(t("wizard_until_before_start", ctx.lang, hint=hint))
+            return
+        w["data"]["deadline"] = until
+        await self._wizard_ask_reminder(ctx, w)
+
+    @staticmethod
+    def _end_of_day(when: datetime, tz: ZoneInfo) -> datetime:
+        local = when.astimezone(tz)
+        return datetime(local.year, local.month, local.day, 23, 59, tzinfo=tz)
 
     async def _wizard_ask_reminder(self, ctx: Ctx, w: dict) -> None:
         self._goto(w, "reminder")
@@ -614,8 +674,10 @@ class BotApp:
         stype = d["stype"]
         sdata: dict = {}
         deadline = None
+        start_at = None
         if stype == "once":
             deadline = d["deadline"]
+            start_at = d["start"]
         elif stype == "every_n_days":
             sdata = {"n": d["n"], "anchor": d["anchor"]}
         elif stype == "weekdays":
@@ -624,6 +686,7 @@ class BotApp:
             sdata = {"day": d["day"]}
         task = await self.store.create_task(
             ctx.user.id, d["place_id"], d["title"], stype, sdata, rt, deadline,
+            start_at=start_at,
         )
         await self.store.materialize_occurrences(
             task, datetime.now(ctx.tz).date(), self.cfg.occurrence_horizon_days, ctx.settings.tz,
@@ -662,10 +725,14 @@ class BotApp:
                 await ctx.reply(t("place_removed", ctx.lang))
         elif action == "done":
             await self._cb_done(ctx, int(arg))
+        elif action == "wip":
+            await self._cb_wip(ctx, int(arg))
         elif action == "snooze":
             await self._cb_snooze(ctx, int(arg))
         elif action == "skip":
             await self._cb_skip(ctx, int(arg))
+        elif action == "dtl":
+            await self._cb_until(ctx, arg)
         elif action == "snz":
             await self._cb_snooze_set(ctx, arg)
         elif action == "lang":
@@ -719,7 +786,7 @@ class BotApp:
         await self._ask_step(ctx, w)
 
     async def _cb_time(self, ctx: Ctx, arg: str) -> None:
-        """Time picked via buttons (deadline step or reminder-time step)."""
+        """Time picked via buttons (start-time step or reminder-time step)."""
         w = self.wizards.get(ctx.user.id)
         if not w or w.get("step") not in ("whentime", "reminder"):
             return
@@ -728,7 +795,24 @@ class BotApp:
             if rt is not None:
                 await self._wizard_finish(ctx, w, rt)
             return
-        await self._set_deadline(ctx, w, w["data"]["picked_date"], _parse_hhmm(arg))
+        await self._set_start(ctx, w, w["data"]["picked_date"], _parse_hhmm(arg))
+
+    async def _cb_until(self, ctx: Ctx, arg: str) -> None:
+        """Ready-by presets for a task stretched over time."""
+        w = self.wizards.get(ctx.user.id)
+        if not w or w.get("step") != "until":
+            return
+        local = w["data"]["start"].astimezone(ctx.tz)
+        if arg == "eod":
+            until = datetime(local.year, local.month, local.day, 23, 59,
+                             tzinfo=ctx.tz)
+        elif arg in ("next18", "week18"):
+            day = (local + timedelta(days=1 if arg == "next18" else 7)).date()
+            until = datetime(day.year, day.month, day.day, 18, 0, tzinfo=ctx.tz)
+        else:
+            return
+        w["data"]["deadline"] = until
+        await self._wizard_ask_reminder(ctx, w)
 
     async def _set_deadline(self, ctx: Ctx, w: dict, d: date,
                             tval: time | None) -> None:
@@ -814,6 +898,15 @@ class BotApp:
         if await self.store.mark_done(occ_id, ctx.ev.platform):
             await ctx.reply(t("msg_done", ctx.lang, title=got[1].title))
 
+    async def _cb_wip(self, ctx: Ctx, occ_id: int) -> None:
+        # «В работе»: the user started it. The row keeps its deadline but is
+        # never punished as missed while the work is in progress
+        got = await self.store.get_occurrence(occ_id)
+        if not got or got[1].user_id != ctx.user.id:
+            return
+        if await self.store.start_work(occ_id):
+            await ctx.reply(t("msg_wip", ctx.lang, title=got[1].title))
+
     async def _cb_skip(self, ctx: Ctx, occ_id: int) -> None:
         # "not today" without marking it done: closes this occurrence without
         # the missed penalty, the schedule just continues with the next one
@@ -856,16 +949,39 @@ class BotApp:
         if not occs:
             await ctx.reply(t("tasks_empty", ctx.lang, place=place.name))
             return
-        lines = [t("tasks_header", ctx.lang, place=place.name)]
+        text, rows = self._render_tasks(ctx.lang, ctx.tz, place.name, occs)
+        await ctx.reply(text, rows)
+
+    def _render_tasks(self, lang: str, tz: ZoneInfo, place_name: str,
+                      occs: list[tuple]) -> tuple[str, ButtonRows]:
+        """(text, buttons) of a task list — shared by /задачи and digests."""
+        lines = [t("tasks_header", lang, place=place_name)]
         rows: ButtonRows = []
         for i, (occ, task) in enumerate(occs, 1):
-            due_local = occ.due_at.astimezone(ctx.tz).strftime("%d.%m %H:%M")
-            mark = t("task_overdue_mark", ctx.lang) if occ.status == "missed" else ""
-            lines.append(t("task_row", ctx.lang, n=i, title=task.title, due=due_local) + mark)
-            rows.append([(t("btn_done", ctx.lang), f"done:{occ.id}"),
-                         (t("btn_snooze", ctx.lang), f"snooze:{occ.id}"),
-                         (t("btn_skip", ctx.lang), f"skip:{occ.id}")])
-        await ctx.reply("\n".join(lines), rows)
+            due = occ.due_at.astimezone(tz)
+            if occ.start_at is not None:
+                # work stretched over time: show the whole window
+                start = occ.start_at.astimezone(tz)
+                line = t("task_row_range", lang, n=i, title=task.title,
+                         start=start.strftime("%d.%m %H:%M"),
+                         due=due.strftime("%d.%m %H:%M"))
+            else:
+                line = t("task_row", lang, n=i, title=task.title,
+                         due=due.strftime("%d.%m %H:%M"))
+            if occ.status == "missed":
+                line += t("task_overdue_mark", lang)
+            elif occ.status == "in_progress":
+                line += t("task_started_mark", lang)
+            lines.append(line)
+            row = [(t("btn_done", lang), f"done:{occ.id}")]
+            if occ.status == "in_progress":
+                row.append((t("btn_skip", lang), f"skip:{occ.id}"))
+            else:
+                row += [(t("btn_wip", lang), f"wip:{occ.id}"),
+                        (t("btn_snooze", lang), f"snooze:{occ.id}"),
+                        (t("btn_skip", lang), f"skip:{occ.id}")]
+            rows.append(row)
+        return "\n".join(lines), rows
 
     async def build_digest(self, user_id: int, settings: UserSettings, place: PlaceDC):
         """(text, buttons) for today's tasks at `place`, or None if nothing."""
@@ -878,16 +994,7 @@ class BotApp:
         user = await self.store.get_user(user_id)
         if user:
             lang = user.language
-        lines = [t("tasks_header", lang, place=place.name)]
-        rows: ButtonRows = []
-        for i, (occ, task) in enumerate(occs, 1):
-            due = occ.due_at.astimezone(tz).strftime("%d.%m %H:%M")
-            mark = t("task_overdue_mark", lang) if occ.status == "missed" else ""
-            lines.append(t("task_row", lang, n=i, title=task.title, due=due) + mark)
-            rows.append([(t("btn_done", lang), f"done:{occ.id}"),
-                         (t("btn_snooze", lang), f"snooze:{occ.id}"),
-                         (t("btn_skip", lang), f"skip:{occ.id}")])
-        return "\n".join(lines), rows
+        return self._render_tasks(lang, tz, place.name, occs)
 
     async def _digest_now(self, user_id: int, origin: Account) -> bool:
         settings = await self.store.get_settings(user_id)

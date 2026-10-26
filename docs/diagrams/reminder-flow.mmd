@@ -5,7 +5,7 @@ sequenceDiagram
     participant Msg as Messenger port<br/>(notify_user → all/primary accounts)
     participant U as User (TG/VK)
 
-    Sch->>Core: mark_overdue(now): pending past due → missed
+    Sch->>Core: mark_overdue(now): pending past due → missed<br/>(in_progress work stays open)
     loop per user (in user tz)
         Core->>Core: reminders_on? materialize horizon,<br/>trigger reached (times/interval<br/>or any occurrence reminder_at)? quiet hours?
         alt no trigger / quiet / reminders off
@@ -28,11 +28,12 @@ sequenceDiagram
                 Core-->>Sch: silent
             end
         end
-        Core->>Msg: digest text + per-task buttons
-        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭][⏭skip]<br/>2. Созвон — до 12:00 ⚠️просрочено [✅][⏭][⏭skip]
+        Core->>Msg: digest text + per-task buttons<br/>(older keyboards of this chat get disarmed)
+        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭][⏭skip]<br/>2. Полка — с 26.10 09:00 до 30.10 18:00 [✅][▶][⏭][⏭skip]<br/>3. Созвон — до 12:00 ⚠️просрочено [✅][⏭][⏭skip]
     end
     U->>Msg: "done:42" button (any linked chat)
     Msg->>Core: ownership check → status=done + completions row
+    U->>Msg: "wip:42" → status=in_progress: «▶ в работе»,<br/>row keeps its deadline but is never marked missed
     U->>Msg: "snooze:42" → duration buttons [15м][1ч][4ч][+сутки]
     U->>Msg: "snz:42:60" → reminder_at = now + 60 min
     U->>Msg: "skip:42" → status=skipped: hidden today,<br/>never flipped to missed, no penalty in stats

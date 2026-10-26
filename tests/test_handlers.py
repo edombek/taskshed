@@ -241,7 +241,7 @@ class TestMenuAndDeadline:
         f = await send(env, cb="cmd:places")
         assert "Дом" in f.texts()[0]
 
-    async def test_once_wizard_rejects_past_deadline(self, env):
+    async def test_once_wizard_rejects_past_start(self, env):
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
@@ -251,17 +251,40 @@ class TestMenuAndDeadline:
         await send(env, cb=f"place:{pid}")
         await send(env, cb="sched:once")
         f = await send(env, "2016-10-26 04:05")  # year typo: 10 years ago
-        assert "прошёл" in f.texts()[-1]
+        assert "уже прошло" in f.texts()[-1]
         assert await store.list_tasks(user.id) == []  # nothing created
         today = datetime.now(UTC).date().isoformat()
-        await send(env, f"{today} 12:00")
-        await send(env, "09:00")
+        await send(env, f"{today} 12:00")   # when it starts
+        await send(env, "")                 # ready-by: Enter = end of that day
+        await send(env, "09:00")            # reminder time
         tasks = await store.list_tasks(user.id)
-        assert len(tasks) == 1 and tasks[0].deadline.year == datetime.now(UTC).year
+        assert len(tasks) == 1
+        assert tasks[0].start_at.year == datetime.now(UTC).year
+        assert (tasks[0].deadline.hour, tasks[0].deadline.minute) == (23, 59)
+
+    async def test_once_until_must_be_after_start(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await send(env, "/задача")
+        await send(env, "Тест")
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:once")
+        today = datetime.now(UTC).date()
+        await send(env, f"{today.isoformat()} 18:00")
+        f = await send(env, f"{today.isoformat()} 12:00")  # before the start
+        assert "позже начала" in f.texts()[-1]
+        await send(env, cb="dtl:eod")  # a button does the right thing anyway
+        labels = [lbl for row in fake.last_buttons() for lbl, _ in row]
+        assert "⏎ 18:00" in labels  # reminder defaults to the start time
+        await send(env, "")
+        tasks = await store.list_tasks(user.id)
+        assert len(tasks) == 1
 
 
 class TestWizardKeyboards:
-    async def test_once_deadline_via_buttons(self, env):
+    async def test_once_start_and_until_via_buttons(self, env):
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
@@ -276,12 +299,19 @@ class TestWizardKeyboards:
         times = [cb for row in fake.last_buttons() for _, cb in row]
         assert "tm:18:00" in times
         await send(env, cb="tm:18:00")
-        await send(env, "09:00")
+        until = [cb for row in fake.last_buttons() for _, cb in row]
+        assert "dtl:eod" in until and "dtl:next18" in until
+        await send(env, cb="dtl:next18")
+        await send(env, "")  # reminder defaults to the start time
         tasks = await store.list_tasks(user.id)
         assert len(tasks) == 1
-        tomorrow = datetime.now(UTC).date() + timedelta(days=1)
+        day1 = datetime.now(UTC).date() + timedelta(days=1)
+        assert tasks[0].start_at == datetime(
+            day1.year, day1.month, day1.day, 18, 0, tzinfo=UTC)
+        day2 = day1 + timedelta(days=1)
         assert tasks[0].deadline == datetime(
-            tomorrow.year, tomorrow.month, tomorrow.day, 18, 0, tzinfo=UTC)
+            day2.year, day2.month, day2.day, 18, 0, tzinfo=UTC)
+        assert tasks[0].reminder_time == time(18, 0)
 
     async def test_whentime_accepts_typed_hhmm(self, env):
         app, store, fake = env
@@ -294,9 +324,12 @@ class TestWizardKeyboards:
         await send(env, cb="sched:once")
         await send(env, cb="dt:0")
         await send(env, "7:45")
-        await send(env, "")  # default reminder
+        await send(env, "")  # ready-by: end of that day
+        await send(env, "")  # default reminder = when it starts
         tasks = await store.list_tasks(user.id)
-        assert tasks and tasks[0].deadline.hour == 7 and tasks[0].deadline.minute == 45
+        assert tasks and tasks[0].start_at.hour == 7 and tasks[0].start_at.minute == 45
+        assert (tasks[0].deadline.hour, tasks[0].deadline.minute) == (23, 59)
+        assert tasks[0].reminder_time == time(7, 45)
 
     async def test_urls_defanged_in_titles_and_places(self, env):
         app, store, fake = env
@@ -817,3 +850,58 @@ class TestStaleKeyboardCleanup:
         await app.handle(RawEvent("telegram", PID, callback="rem:toggle"))
         assert len(fake.sent) == before  # edited in place...
         assert screen.buttons            # ...and still clickable
+
+
+class TestWorkInProgress:
+    """One-off tasks have a work window and a «▶ В работе» button."""
+
+    async def _stretched_task(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        task = await store.create_task(
+            user.id, pid, "Полка", ScheduleType.ONCE, {}, time(9, 0),
+            deadline=datetime.now(UTC) - timedelta(hours=1),
+            start_at=datetime.now(UTC) - timedelta(hours=3),
+        )
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 3, "UTC")
+        await store.set_location(user.id, pid)
+        return app, store, task
+
+    async def test_list_offers_wip_and_shows_the_window(self, env):
+        app, store, task = await self._stretched_task(env)
+        f = await send(env, "/задачи")
+        assert "с " in f.texts()[0] and " до " in f.texts()[0]
+        flat = [cb for row in prev_buttons(f) for _, cb in row]
+        assert any(cb.startswith("wip:") for cb in flat)
+        assert any(cb.startswith("done:") for cb in flat)
+
+    async def test_wip_keeps_the_row_open_and_drops_itself(self, env):
+        app, store, _ = await self._stretched_task(env)
+        f = await send(env, "/задачи")
+        occ_id = next(int(cb.split(":")[1]) for row in prev_buttons(f)
+                      for _, cb in row if cb.startswith("wip:"))
+        f = await send(env, cb=f"wip:{occ_id}")
+        assert "В работе: «Полка»" in f.texts()[0]
+        # the overdue pass does not turn started work into missed
+        assert await store.mark_overdue(datetime.now(UTC)) == 0
+        f = await send(env, "/задачи")
+        assert "▶в работе" in f.texts()[0]
+        flat = [cb for row in prev_buttons(f) for _, cb in row]
+        assert not any(cb.startswith("wip:") for cb in flat)
+        assert not any(cb.startswith("snooze:") for cb in flat)
+        assert f"done:{occ_id}" in flat and f"skip:{occ_id}" in flat
+
+    async def test_digest_offers_wip_too(self, env):
+        app, store, _ = await self._stretched_task(env)
+        await store.set_location((await store.get_user_by_account("telegram", PID)).id,
+                                 await place_id_of(store, (await store.get_user_by_account(
+                                     "telegram", PID)).id, "Дом"))
+        settings = await store.get_settings((await store.get_user_by_account(
+            "telegram", PID)).id)
+        place = (await store.get_location((await store.get_user_by_account(
+            "telegram", PID)).id))[0]
+        digest = await app.build_digest(
+            (await store.get_user_by_account("telegram", PID)).id, settings, place)
+        assert digest and any(cb.startswith("wip:") for row in digest[1] for _, cb in row)

@@ -18,7 +18,8 @@ def _parse_date(value: str | None) -> date | None:
     return date.fromisoformat(value) if value else None
 
 
-def occurrence_dates(task: Task, start: date, end: date) -> list[date]:
+def occurrence_dates(task: Task, start: date, end: date,
+                     tz: ZoneInfo | None = None) -> list[date]:
     """Local dates (in user timezone) this task repeats on, within [start, end]."""
     if start > end:
         return []
@@ -26,8 +27,11 @@ def occurrence_dates(task: Task, start: date, end: date) -> list[date]:
     days: list[date] = []
 
     if task.schedule_type == ScheduleType.ONCE:
-        if task.deadline is not None:
-            d = task.deadline.date()
+        anchor = task.deadline or task.start_at
+        if anchor is not None:
+            # stored instants come back as UTC; the user's calendar day is
+            # what decides which date the task belongs to
+            d = anchor.astimezone(tz).date() if tz else anchor.date()
             if start <= d <= end:
                 days.append(d)
 
@@ -72,8 +76,11 @@ def occurrence_datetimes(
     task: Task, when: date, tz: ZoneInfo
 ) -> tuple[datetime, datetime]:
     """(due_at, reminder_at) for one local date, both tz-aware."""
-    if task.schedule_type == ScheduleType.ONCE and task.deadline is not None:
+    if task.schedule_type == ScheduleType.ONCE:
         due = task.deadline
+        if due is None and task.start_at is not None:
+            # start without a ready-by moment: still due by the end of that day
+            due = datetime.combine(when, END_OF_DAY, tzinfo=tz)
         reminder = min(
             datetime.combine(when, task.reminder_time, tzinfo=tz), due
         )
@@ -89,10 +96,14 @@ def plan_occurrences(
     """Occurrences from today (inclusive) up to horizon — for materialization."""
     end = today + timedelta(days=horizon_days)
     out = []
-    for d in occurrence_dates(task, today, end):
+    for d in occurrence_dates(task, today, end, tz):
         due_at, reminder_at = occurrence_datetimes(task, d, tz)
+        started = task.start_at.astimezone(UTC) if (
+            task.schedule_type == ScheduleType.ONCE and task.start_at
+        ) else None
         out.append(TaskOccurrence(id=None, task_id=task.id or 0,
-                                  due_at=due_at, reminder_at=reminder_at))
+                                  due_at=due_at, reminder_at=reminder_at,
+                                  start_at=started))
     return out
 
 

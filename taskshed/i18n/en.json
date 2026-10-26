@@ -42,7 +42,7 @@
   "wd_su": "Su",
   "wd_done": "Done",
   "wizard_ask_month_day": "Which day of the month? (1–31)",
-  "wizard_ask_when": "Which date and time? (e.g. 2026-11-15 14:30, or date only + button)",
+  "wizard_ask_when": "When should it start? (e.g. 15.11.2026 14:30 or 15.11 14.30)",
   "wizard_ask_reminder": "Remind at what time? (HH:MM, or tap a button)",
   "wizard_saved": "Task “{title}” added to “{place}”.",
   "wizard_cancelled": "Cancelled.",
@@ -79,7 +79,7 @@
   "menu_places": "🏠 Places",
   "menu_reminders": "🔔 Reminders",
   "menu_stats": "📊 Stats",
-  "wizard_deadline_past": "That deadline is already in the past — pick today or later.\n{hint}",
+  "wizard_deadline_past": "That moment has already passed — pick today or later.\n{hint}",
   "btn_today": "📅 Today",
   "btn_tomorrow": "📅 Tomorrow",
   "btn_in_2_days": "📅 In 2 days",
@@ -136,5 +136,14 @@
   "rem_when_times_btn": "🕐 At fixed times of day",
   "rem_when_interval_btn": "🔁 Every N minutes",
   "rem_mode_times": "at fixed times ({times})",
-  "rem_mode_interval": "every {minutes} min"
+  "rem_mode_interval": "every {minutes} min",
+  "wizard_ask_until": "By when should it be ready? (Enter = same day, by 23:59)",
+  "btn_until_eod": "⏎ same day, 23:59",
+  "btn_until_next_day": "next day, 18:00",
+  "btn_until_week": "in a week, 18:00",
+  "wizard_until_before_start": "The ready-by time must be after the start.\n{hint}",
+  "task_row_range": "{n}. {title} — from {start} to {due}",
+  "task_started_mark": " ▶in progress",
+  "btn_wip": "▶ In progress",
+  "msg_wip": "In progress: “{title}” ▶"
 }

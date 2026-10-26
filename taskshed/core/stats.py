@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .models import Task, TaskOccurrence
@@ -68,3 +68,17 @@ def trend(occs: list[tuple[TaskOccurrence, Task]], tz: str) -> list[tuple[date, 
         if occ.status == "done":
             buckets[start]["done"] += 1
     return [(k, v["done"], v["total"]) for k, v in sorted(buckets.items())]
+
+
+def completions_by_hour(done_at: list[datetime], tz: str) -> dict[tuple[date, int], int]:
+    """(user-local date, hour of day) -> tasks finished in that hour.
+
+    Short reporting periods are drawn as an hour-level grid, so the daily
+    view is not the only resolution available.
+    """
+    tzinfo = ZoneInfo(tz)
+    grid: dict[tuple[date, int], int] = defaultdict(int)
+    for stamp in done_at:
+        local = stamp.astimezone(tzinfo)
+        grid[(local.date(), local.hour)] += 1
+    return dict(grid)

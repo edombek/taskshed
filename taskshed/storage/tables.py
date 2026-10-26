@@ -63,6 +63,7 @@ class UserSettings(Base):
     tz: Mapped[str] = mapped_column(String(64), default="UTC")
     notify_platforms: Mapped[str] = mapped_column(String(10), default="all")
     stats_format: Mapped[str] = mapped_column(String(10), default="both")
+    stats_horizon_days: Mapped[int] = mapped_column(Integer, default=7)
     last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # last digest state: pending reminder awaiting location answer
     pending_reminder: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -93,6 +94,7 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(200))
     note: Mapped[str] = mapped_column(Text, default="")
     deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    start_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     schedule_type: Mapped[str] = mapped_column(String(20))
     schedule_data: Mapped[dict] = mapped_column(JSON, default=dict)
     reminder_time: Mapped[str] = mapped_column(String(5), default="09:00")  # HH:MM user tz
@@ -107,7 +109,8 @@ class TaskOccurrence(Base):
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
     due_at: Mapped[datetime] = mapped_column(DateTime)
     reminder_at: Mapped[datetime] = mapped_column(DateTime)
-    status: Mapped[str] = mapped_column(String(10), default="pending")
+    start_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
 
 
 class Completion(Base):

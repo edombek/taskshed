@@ -20,8 +20,10 @@ class ScheduleType(StrEnum):
 
 class OccurrenceStatus(StrEnum):
     PENDING = "pending"
+    IN_PROGRESS = "in_progress"  # started, not finished yet ("в работе")
     DONE = "done"
     MISSED = "missed"
+    SKIPPED = "skipped"
 
 
 class Platform(StrEnum):
@@ -60,7 +62,9 @@ class Task:
     place_id: int
     title: str
     note: str = ""
-    deadline: datetime | None = None  # only meaningful for ScheduleType.ONCE
+    deadline: datetime | None = None  # ready-by moment (once tasks)
+    # when a one-off task begins: work has a duration, not a single instant
+    start_at: datetime | None = None
     schedule_type: ScheduleType = ScheduleType.EVERY_N_DAYS
     schedule_data: dict = field(default_factory=dict)
     #  "every_n_days": {"n": 3, "anchor": "2026-10-25"}
@@ -76,6 +80,7 @@ class TaskOccurrence:
     task_id: int
     due_at: datetime       # deadline of this repeat
     reminder_at: datetime  # when the reminder may fire
+    start_at: datetime | None = None  # set for once tasks: work may begin here
     status: OccurrenceStatus = OccurrenceStatus.PENDING
 
 
@@ -92,5 +97,7 @@ class UserSettings:
     tz: str = "UTC"
     notify_platforms: str = "all"       # "all" | "primary"
     stats_format: str = "both"          # "text" | "image" | "both"
+    # how many days into the future activity charts reach (1 week by default)
+    stats_horizon_days: int = 7
     last_reminded_at: datetime | None = None
     pending_reminder: bool = False      # digest awaiting location answer

@@ -46,6 +46,7 @@ erDiagram
         string tz
         string notify_platforms "all|primary"
         string stats_format "both|text|image"
+        int stats_horizon_days "chart lookahead, default 7"
         datetime last_reminded_at "nullable"
         bool pending_reminder "digest awaiting location answer"
     }
@@ -55,7 +56,8 @@ erDiagram
         int place_id FK
         string title
         text note
-        datetime deadline "only for schedule once"
+        datetime deadline "ready-by moment, nullable"
+        datetime start_at "work begins (once tasks), nullable"
         string schedule_type "once|every_n_days|weekdays|monthly_day"
         json schedule_data
         string reminder_time "HH:MM user tz"
@@ -67,7 +69,8 @@ erDiagram
         int task_id FK "UNIQUE(task_id, due_at)"
         datetime due_at "deadline of this repeat, UTC"
         datetime reminder_at "when the reminder may fire"
-        string status "pending|done|missed|skipped"
+        datetime start_at "work window opens (once tasks), nullable"
+        string status "pending|in_progress|done|missed|skipped"
     }
     completions {
         int occurrence_id PK "also FK to task_occurrences"

@@ -80,7 +80,8 @@ def _place(r: Place) -> PlaceDC:
 def _task(r: Task) -> TaskDC:
     return TaskDC(
         id=r.id, user_id=r.user_id, place_id=r.place_id, title=r.title, note=r.note,
-        deadline=_aware(r.deadline), schedule_type=r.schedule_type,
+        deadline=_aware(r.deadline), start_at=_aware(r.start_at),
+        schedule_type=r.schedule_type,
         schedule_data=r.schedule_data or {}, reminder_time=_time(r.reminder_time),
         is_active=r.is_active,
     )
@@ -88,7 +89,8 @@ def _task(r: Task) -> TaskDC:
 
 def _occ(r: TaskOccurrence) -> OccDC:
     return OccDC(id=r.id, task_id=r.task_id, due_at=_aware(r.due_at),
-                 reminder_at=_aware(r.reminder_at), status=r.status)
+                 reminder_at=_aware(r.reminder_at), start_at=_aware(r.start_at),
+                 status=r.status)
 
 
 def _settings(r: UserSettings) -> SettingsDC:
@@ -99,6 +101,7 @@ def _settings(r: UserSettings) -> SettingsDC:
         quiet_start=_time(r.quiet_start), quiet_end=_time(r.quiet_end),
         location_ttl_hours=r.location_ttl_hours, tz=r.tz,
         notify_platforms=r.notify_platforms, stats_format=r.stats_format,
+        stats_horizon_days=r.stats_horizon_days,
         last_reminded_at=_aware(r.last_reminded_at),
         pending_reminder=r.pending_reminder,
     )
@@ -269,13 +272,14 @@ class Store:
     async def create_task(self, user_id: int, place_id: int, title: str,
                           schedule_type: str, schedule_data: dict,
                           reminder_time: time, deadline: datetime | None = None,
-                          note: str = "") -> TaskDC:
+                          note: str = "", start_at: datetime | None = None) -> TaskDC:
         async with self._sf() as s:
             t = Task(
                 user_id=user_id, place_id=place_id, title=title[:200], note=note,
                 schedule_type=schedule_type, schedule_data=schedule_data,
                 reminder_time=reminder_time.strftime("%H:%M"),
                 deadline=_naive(deadline) if deadline else None,
+                start_at=_naive(start_at) if start_at else None,
             )
             s.add(t)
             await s.commit()
@@ -327,28 +331,40 @@ class Store:
                 )
                 if exists is None:
                     s.add(TaskOccurrence(task_id=task.id, due_at=_naive(occ.due_at),
-                                         reminder_at=_naive(occ.reminder_at)))
+                                         reminder_at=_naive(occ.reminder_at),
+                                         start_at=_naive(occ.start_at)
+                                         if occ.start_at else None))
                     inserted += 1
             await s.commit()
         return inserted
 
     async def occurrences_today(self, user_id: int, today_local: date,
                                 tz: str, place_id: int | None = None) -> list[tuple[OccDC, TaskDC]]:
-        """Pending/missed occurrences due on the user-local date, plus overdue pending."""
+        """Occurrences that concern the user-local date.
+
+        That is: due today, already started (a task stretched over time shows
+        from its start day on), and still-open rows whose deadline passed.
+        In-progress rows are never dropped for being overdue — work started
+        on them is not punished as missed.
+        """
         tzinfo = ZoneInfo(tz)
         day_start = _naive(datetime.combine(today_local, time.min, tzinfo=tzinfo))
         day_end = _naive(datetime.combine(today_local, time.max, tzinfo=tzinfo))
+        open_row = TaskOccurrence.status.notin_(["done", "skipped"])
         async with self._sf() as s:
             q = (
                 select(TaskOccurrence, Task)
                 .join(Task, Task.id == TaskOccurrence.task_id)
                 .where(Task.user_id == user_id, Task.is_active.is_(True))
                 .where(
-                    (
-                        (TaskOccurrence.due_at >= day_start) & (TaskOccurrence.due_at <= day_end)
-                        & (TaskOccurrence.status.notin_(["done", "skipped"]))
-                    )
-                    | ((TaskOccurrence.status == "pending") & (TaskOccurrence.due_at < day_start))
+                    open_row,
+                    ((TaskOccurrence.due_at >= day_start)
+                     & (TaskOccurrence.due_at <= day_end))
+                    | ((TaskOccurrence.start_at.isnot(None))
+                       & (TaskOccurrence.start_at <= day_end)
+                       & (TaskOccurrence.due_at >= day_start))
+                    | (TaskOccurrence.status.in_(["pending", "in_progress"])
+                       & (TaskOccurrence.due_at < day_start)),
                 )
             )
             if place_id is not None:
@@ -378,6 +394,22 @@ class Store:
             due = _aware(occ.due_at)
             if due <= now:
                 occ.due_at = _naive(now + delta)
+            await s.commit()
+            return True
+
+    async def start_work(self, occurrence_id: int) -> bool:
+        """«В работе»: the user began this occurrence.
+
+        Started work stays open (the overdue pass never turns it into missed);
+        its planned start is kept, an ad-hoc start is recorded if there was none.
+        """
+        async with self._sf() as s:
+            occ = await s.get(TaskOccurrence, occurrence_id)
+            if not occ or occ.status in ("done", "skipped", "in_progress"):
+                return False
+            occ.status = "in_progress"
+            if occ.start_at is None:
+                occ.start_at = _naive(datetime.now(UTC))
             await s.commit()
             return True
 
@@ -482,3 +514,17 @@ class Store:
                 .order_by(TaskOccurrence.due_at)
             )
             return [(_occ(o), _task(t)) for o, t in rows]
+
+    async def completions_in_range(self, user_id: int, start: datetime,
+                                   end: datetime) -> list[datetime]:
+        """Moments tasks were actually finished (tz-aware UTC)."""
+        async with self._sf() as s:
+            stamps = (await s.scalars(
+                select(Completion.done_at)
+                .join(TaskOccurrence, TaskOccurrence.id == Completion.occurrence_id)
+                .join(Task, Task.id == TaskOccurrence.task_id)
+                .where(Task.user_id == user_id,
+                       Completion.done_at >= _naive(start),
+                       Completion.done_at <= _naive(end))
+            )).all()
+            return [_aware(d) for d in stamps]

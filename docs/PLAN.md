@@ -102,7 +102,7 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Reminder timing merged into one flow: «⏰ Когда напоминать» →
       times/every-N-minutes picker; localized mode line on the settings
       screen; ⬅️ Назад in the picker returns to settings (in place)
-- [ ] Task lists/digests: «▶ В работе» status for tasks stretched over time
+- [x] Task lists/digests: «▶ В работе» status for tasks stretched over time
       (start + ready-by deadline), instead of one-off tasks being a moment
 - [ ] ⚙️ «Настройки» instead of 🔔 «Напоминания»: one per-user settings screen
       incl. linked platforms status and chart horizon
