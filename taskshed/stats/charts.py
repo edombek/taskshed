@@ -15,6 +15,10 @@ COLOR_DONE = "#2e8b57"
 COLOR_MISSED = "#c0392b"
 COLOR_PENDING = "#95a5a6"
 
+HEAT_GREENS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
+HEAT_MISSED = "#d73027"
+HEAT_PENDING = "#4a90d9"
+
 
 def _legend(lang: str):
     return (t("w_done", lang), t("w_missed", lang), t("w_pending", lang))
@@ -73,27 +77,79 @@ def trend_line(points: list[tuple[date, int, int]], lang: str, out_path: str) ->
     return out_path
 
 
-def calendar_heatmap(month_percents: dict[date, float], year: int, month: int,
-                     lang: str, out_path: str) -> str:
-    """Simple monotone heatmap: weekdays × weeks grid for one month."""
-    import datetime as dt
+def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
+                   max_weeks: int = 53) -> str:
+    """GitHub-contribution-style grid: week columns, Mon-Sun rows.
 
-    import numpy as np
+    Cell base color = number of completions (green scale, GitHub palette).
+    Inside a cell a small red square marks missed occurrences (top-right)
+    and a blue square marks still-planned ones (bottom-right), so one day
+    shows all three states at a glance.
+    """
+    from datetime import timedelta
 
-    days_in_month = list(month_percents)
-    if not days_in_month:
+    import matplotlib.patches as mpatches
+    from matplotlib.lines import Line2D
+
+    if not days:
         return ""
-    weeks = sorted({d - dt.timedelta(days=d.weekday()) for d in days_in_month})
-    mat = np.full((7, len(weeks)), np.nan)
-    for d, pct in month_percents.items():
-        wi = weeks.index(d - dt.timedelta(days=d.weekday()))
-        mat[d.weekday(), wi] = pct
-    fig, ax = plt.subplots(figsize=(max(4, len(weeks) * 0.9), 3.2))
-    ax.imshow(mat, cmap="Greens", vmin=0, vmax=100, origin="lower")
-    weekday_names = [dt.date(2024, 1, 1 + w).strftime("%a") for w in range(7)]
-    ax.set_yticks(range(7), weekday_names, fontsize=8)
-    ax.set_xticks(range(len(weeks)), [w.strftime("%d.%m") for w in weeks], fontsize=8)
-    ax.set_title(t("chart_heat", lang) + f" {month:02d}.{year}")
+    lo, hi = min(days), max(days)
+    first_monday = lo - timedelta(days=lo.weekday())
+    last_monday = hi - timedelta(days=hi.weekday())
+    n_weeks = (last_monday - first_monday).days // 7 + 1
+    if n_weeks > max_weeks:  # keep the most recent window, GitHub-like
+        first_monday = last_monday - timedelta(weeks=max_weeks - 1)
+        n_weeks = max_weeks
+
+    fig, ax = plt.subplots(figsize=(0.26 * n_weeks + 2.2, 2.8))
+    for d, agg in days.items():
+        wi = (d - first_monday).days // 7
+        if wi < 0:
+            continue
+        row = d.weekday()
+        done = int(agg.get("done", 0))
+        ax.add_patch(mpatches.Rectangle((wi, row), 0.86, 0.86,
+                                        facecolor=HEAT_GREENS[min(done, 4)],
+                                        edgecolor="white", linewidth=0.4))
+        if int(agg.get("missed", 0)):
+            ax.add_patch(mpatches.Rectangle((wi + 0.5, row), 0.36, 0.36,
+                                            facecolor=HEAT_MISSED,
+                                            edgecolor="none"))
+        if int(agg.get("pending", 0)):
+            ax.add_patch(mpatches.Rectangle((wi + 0.5, row + 0.5), 0.36, 0.36,
+                                            facecolor=HEAT_PENDING,
+                                            edgecolor="none"))
+
+    # month labels above the column where a month first appears
+    seen: set[tuple[int, int]] = set()
+    for wi in range(n_weeks):
+        monday = first_monday + timedelta(weeks=wi)
+        key = (monday.year, monday.month)
+        if key not in seen:
+            seen.add(key)
+            ax.text(wi, -0.9, monday.strftime("%b"), fontsize=7,
+                    ha="left", va="center")
+    for row, name in ((0, "Mon"), (2, "Wed"), (4, "Fri")):
+        ax.text(-0.4, row, name, fontsize=7, ha="right", va="center")
+
+    ax.set_xlim(-2.2, n_weeks)
+    ax.set_ylim(6.6, -1.6)
+    ax.axis("off")
+
+    handles = [
+        Line2D([0], [0], marker="s", linestyle="none", markersize=7,
+               markerfacecolor=HEAT_GREENS[4], markeredgecolor="none",
+               label=_legend(lang)[0]),
+        Line2D([0], [0], marker="s", linestyle="none", markersize=7,
+               markerfacecolor=HEAT_MISSED, markeredgecolor="none",
+               label=_legend(lang)[1]),
+        Line2D([0], [0], marker="s", linestyle="none", markersize=7,
+               markerfacecolor=HEAT_PENDING, markeredgecolor="none",
+               label=_legend(lang)[2]),
+    ]
+    ax.legend(handles=handles, loc="lower right", fontsize=7, ncols=3,
+              frameon=False, bbox_to_anchor=(1.0, -0.12))
+    ax.set_title(t("chart_heat", lang), fontsize=9)
     fig.tight_layout()
     fig.savefig(out_path, dpi=110)
     plt.close(fig)

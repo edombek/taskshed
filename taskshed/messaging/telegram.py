@@ -77,7 +77,8 @@ class TelegramAdapter:
     # ---------- IMessenger ----------
 
     async def send_text(self, account: Account, text: str) -> None:
-        await self.client.send_message(int(account.platform_user_id), text)
+        await self.client.send_message(int(account.platform_user_id), text,
+                                       link_preview=False)
 
     async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
         await self.client.send_message(

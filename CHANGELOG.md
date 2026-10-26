@@ -24,3 +24,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - (Stage 6) `run_telegram` / `run_vk` / `run_all` entrypoints; reminder
   fan-out to linked accounts with `notify_platforms=all|primary`
   (accounts.last_seen); Alembic migration for `accounts.last_seen`.
+- (Stage 8) UX polish: inline command menu under `/start` and `/help`;
+  button-driven date/time entry in the task wizard (today/tomorrow/… then
+  time presets, typed input still accepted); past-deadline guard;
+  URL defanging in task titles/place names + `link_preview=False`
+  (anti-spam-ban hygiene); statistics chart now also renders a
+  GitHub-style activity heatmap with per-day missed/planned sub-markers.

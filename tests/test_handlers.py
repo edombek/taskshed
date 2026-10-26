@@ -1,7 +1,7 @@
 """Chat logic end-to-end through BotApp + FakeMessenger (no network)."""
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -250,3 +250,62 @@ class TestMenuAndDeadline:
         await send(env, "09:00")
         tasks = await store.list_tasks(user.id)
         assert len(tasks) == 1 and tasks[0].deadline.year == datetime.now(UTC).year
+
+
+class TestWizardKeyboards:
+    async def test_once_deadline_via_buttons(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await send(env, "/задача")
+        await send(env, "Тест")
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:once")
+        rows = fake.last_buttons()
+        assert ("📅 Завтра", "dt:1") in rows[0]
+        await send(env, cb="dt:1")
+        times = [cb for row in fake.last_buttons() for _, cb in row]
+        assert "tm:18:00" in times
+        await send(env, cb="tm:18:00")
+        await send(env, "09:00")
+        tasks = await store.list_tasks(user.id)
+        assert len(tasks) == 1
+        tomorrow = datetime.now(UTC).date() + timedelta(days=1)
+        assert tasks[0].deadline == datetime(
+            tomorrow.year, tomorrow.month, tomorrow.day, 18, 0, tzinfo=UTC)
+
+    async def test_whentime_accepts_typed_hhmm(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await send(env, "/задача")
+        await send(env, "Тест")
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:once")
+        await send(env, cb="dt:0")
+        await send(env, "7:45")
+        await send(env, "")  # default reminder
+        tasks = await store.list_tasks(user.id)
+        assert tasks and tasks[0].deadline.hour == 7 and tasks[0].deadline.minute == 45
+
+    async def test_urls_defanged_in_titles_and_places(self, env):
+        app, store, fake = env
+        await send(env, "мой сайт https://evil.example.com/spam")  # first-run place
+        places = await store.list_places(
+            (await store.get_user_by_account("telegram", PID)).id)
+        assert "evil[.]example[.]com" in places[0].name
+        assert "evil.example.com" not in places[0].name  # not clickable anymore
+        await send(env, "/задача")
+        await send(env, "прочитать www.banned.org/x и позвонить")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, places[0].name)
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:weekdays")
+        await send(env, cb="wd:0")
+        await send(env, cb="wdsubmit")
+        await send(env, "09:00")
+        tasks = await store.list_tasks(user.id)
+        assert tasks and "www[.]banned[.]org" in tasks[0].title
+        assert "www." not in tasks[0].title

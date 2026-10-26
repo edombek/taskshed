@@ -76,6 +76,11 @@
   "menu_reminders": "🔔 Reminders",
   "menu_stats": "📊 Stats",
   "wizard_deadline_past": "That deadline is already in the past — pick today or later.\n{hint}",
+  "btn_today": "📅 Today",
+  "btn_tomorrow": "📅 Tomorrow",
+  "btn_in_2_days": "📅 In 2 days",
+  "wizard_ask_time": "What time? Tap a button or type HH:MM",
+  "stats_heat_caption": "Daily activity: darker square = more completions; red inset = missed, blue inset = planned",
   "lang_set": "Language: English",
   
 

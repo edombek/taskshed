@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from taskshed.config import BotCfg
@@ -42,6 +42,20 @@ SNOOZE_MIN = 60
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 _DT_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$")
+
+# URLs are defanged in user-supplied strings (task titles, place names):
+# a bot that sends clickable links can get flagged and banned by Telegram.
+_URL_RE = re.compile(
+    r"https?://\S+"
+    r"|www\.\S+"
+    r"|(?<![\w./@-])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}"
+    r"(?:/\S*)?"
+)
+
+
+def _defang(text: str) -> str:
+    """Neutralize links: example.com -> example[.]com (not clickable)."""
+    return _URL_RE.sub(lambda m: m.group(0).replace(".", "[.]"), text)
 
 
 def _parse_hhmm(s: str) -> time | None:
@@ -152,7 +166,7 @@ class BotApp:
             return
         # bare text with no places at all → treat as place name (first-run UX)
         if not await self.store.list_places(ctx.user.id):
-            if await self.store.add_place(ctx.user.id, text):
+            if await self.store.add_place(ctx.user.id, _defang(text.strip())):
                 await ctx.reply(t("place_added", ctx.lang, name=text))
             return
         await ctx.reply(t("unknown_cmd", ctx.lang))
@@ -327,6 +341,10 @@ class BotApp:
                     return
                 await ctx.messenger.send_image(ctx.account, produced,
                                                t("stats_sent_doc", ctx.lang))
+                heat = os.path.join(tmp, "heatmap.png")
+                if charts.github_heatmap(days, ctx.lang, heat):
+                    await ctx.messenger.send_image(
+                        ctx.account, heat, t("stats_heat_caption", ctx.lang))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -334,7 +352,7 @@ class BotApp:
 
     async def _wizard_input(self, ctx: Ctx, w: dict, text: str) -> None:
         if w["kind"] == "addplace":
-            if await self.store.add_place(ctx.user.id, text):
+            if await self.store.add_place(ctx.user.id, _defang(text.strip())):
                 self.wizards.pop(ctx.user.id, None)
                 await ctx.reply(t("place_added", ctx.lang, name=text.strip()))
             else:
@@ -345,7 +363,7 @@ class BotApp:
             return
         step = w["step"]
         if step == "title":
-            w["data"]["title"] = text.strip()[:200]
+            w["data"]["title"] = _defang(text.strip())[:200]
             w["step"] = "place"
             await ctx.place_buttons("wizard_ask_place")
         elif step == "n":
@@ -354,7 +372,10 @@ class BotApp:
                 return
             w["data"]["n"] = int(text)
             w["step"] = "anchor"
-            await ctx.reply(t("wizard_ask_anchor_date", ctx.lang))
+            await ctx.reply(t("wizard_ask_anchor_date", ctx.lang), [
+                [(t("btn_today", ctx.lang), "dt:0"),
+                 (t("btn_tomorrow", ctx.lang), "dt:1")],
+            ])
         elif step == "anchor":
             anchor = text.strip() or datetime.now(ctx.tz).date().isoformat()
             try:
@@ -391,6 +412,9 @@ class BotApp:
                 return
             w["data"]["deadline"] = deadline
             await self._wizard_ask_reminder(ctx, w)
+        elif step == "whentime":
+            await self._set_deadline(ctx, w, w["data"]["picked_date"],
+                                     _parse_hhmm(text))
         elif step == "reminder":
             rt = time(9, 0)
             if text.strip():
@@ -465,6 +489,50 @@ class BotApp:
             await self._set_lang(ctx, normalize(arg))
         elif action == "rem":
             await self._cb_rem(ctx, arg)
+        elif action == "dt":
+            await self._cb_date(ctx, int(arg))
+        elif action == "tm":
+            await self._cb_time(ctx, arg)
+
+    async def _cb_date(self, ctx: Ctx, offset: int) -> None:
+        """Date picked via buttons (today/tomorrow/…) in the task wizard."""
+        w = self.wizards.get(ctx.user.id)
+        if not w or w.get("step") not in ("when", "anchor"):
+            return
+        d = datetime.now(ctx.tz).date() + timedelta(days=offset)
+        if w["step"] == "anchor":
+            w["data"]["anchor"] = d.isoformat()
+            await self._wizard_ask_reminder(ctx, w)
+            return
+        w["data"]["picked_date"] = d
+        w["step"] = "whentime"
+        await ctx.reply(t("wizard_ask_time", ctx.lang), [
+            [("08:00", "tm:08:00"), ("12:00", "tm:12:00"), ("15:00", "tm:15:00")],
+            [("18:00", "tm:18:00"), ("21:00", "tm:21:00"), ("23:59", "tm:23:59")],
+        ])
+
+    async def _cb_time(self, ctx: Ctx, arg: str) -> None:
+        """Time picked via buttons after a date, completes the deadline."""
+        w = self.wizards.get(ctx.user.id)
+        if not w or w.get("step") != "whentime":
+            return
+        await self._set_deadline(ctx, w, w["data"]["picked_date"], _parse_hhmm(arg))
+
+    async def _set_deadline(self, ctx: Ctx, w: dict, d: date,
+                            tval: time | None) -> None:
+        """Shared tail of deadline entry (button or typed HH:MM)."""
+        if tval is None:
+            await ctx.reply(t("wizard_bad_input", ctx.lang,
+                              hint=t("wizard_ask_time", ctx.lang)))
+            return
+        deadline = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
+                            tzinfo=ctx.tz)
+        if deadline.date() < datetime.now(ctx.tz).date():
+            await ctx.reply(t("wizard_deadline_past", ctx.lang,
+                              hint=t("wizard_ask_time", ctx.lang)))
+            return
+        w["data"]["deadline"] = deadline
+        await self._wizard_ask_reminder(ctx, w)
 
     async def _cb_place(self, ctx: Ctx, place_id: int) -> None:
         place = await self.store.get_place(ctx.user.id, place_id)
@@ -499,7 +567,11 @@ class BotApp:
         w["data"]["stype"] = stype
         if stype == "once":
             w["step"] = "when"
-            await ctx.reply(t("wizard_ask_when", ctx.lang))
+            await ctx.reply(t("wizard_ask_when", ctx.lang), [
+                [(t("btn_today", ctx.lang), "dt:0"),
+                 (t("btn_tomorrow", ctx.lang), "dt:1"),
+                 (t("btn_in_2_days", ctx.lang), "dt:2")],
+            ])
         elif stype == "every_n_days":
             w["step"] = "n"
             await ctx.reply(t("wizard_ask_n", ctx.lang))

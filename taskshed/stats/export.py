@@ -31,7 +31,8 @@ def write_xlsx(task_rows: list[dict], place_rows: list[dict], path: str) -> None
 
 
 def month_grid(days: dict[date, dict], year: int, month: int) -> dict[date, float]:
-    """done% per day of a month for the heatmap."""
+    """done% per day of a month (kept for CSV-style reports; the PNG chart
+    now uses charts.github_heatmap instead)."""
     out: dict[date, float] = {}
     for d, counts in days.items():
         if d.year == year and d.month == month:

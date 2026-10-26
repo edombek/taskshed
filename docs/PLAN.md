@@ -61,6 +61,15 @@ Checklist of the implementation roadmap. EN summary in
 - [ ] VK smoke: long poll connects, `/старт` replies
 - [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
 
+## Stage 8 — UX polish (from live-testing feedback) ✅
+- [x] Inline command menu buttons under `/start` and `/help`
+- [x] Wizard date/time entry via keyboards (Сегодня/Завтра/… → time presets),
+      typed input still accepted; past-deadline guard
+- [x] URL defanging in task titles and place names; `link_preview=False`
+      on Telegram sends (anti-ban hygiene)
+- [x] GitHub-style activity heatmap (week columns, Mon–Sun rows) with red
+      (missed) and blue (planned) sub-squares inside each day cell
+
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
 - Task-creation wizard state is in-memory (lost on restart).

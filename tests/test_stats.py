@@ -84,7 +84,10 @@ class TestCharts:
         charts.trend_line(trend(occs, "UTC"), "ru", out)
         assert os.path.getsize(out) > 500
         days = per_day(occs, "UTC")
-        grid = export.month_grid(days, 2026, 10)
         out2 = str(tmp_path / "h.png")
-        charts.calendar_heatmap(grid, 2026, 10, "ru", out2)
+        assert charts.github_heatmap(days, "ru", out2) == out2
         assert os.path.getsize(out2) > 500
+        # a year-long window stays within 53 week-columns
+        far = {date(2025, 1, 1) + timedelta(days=i): {"done": 1} for i in range(400)}
+        out3 = str(tmp_path / "h2.png")
+        assert charts.github_heatmap(far, "en", out3) == out3
