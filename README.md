@@ -13,12 +13,16 @@ platform-independent core.
 ## Features
 
 - Tasks split by **places** you define yourself (`/places`).
-- Schedules: one-off with deadline, every N days, specific weekdays,
-  day of month; every repeat is a materialized **occurrence** you can mark
-  ✅ done, ⏭ postpone (15 min/1 h/4 h/1 day) or ⏭ skip right from the
-  reminder message.
-- Per-user **reminder settings**: fixed times or interval mode, quiet hours,
-  time zone, how long your chosen location stays valid.
+- Schedules: one-off tasks with a **start and a ready-by deadline** (they can
+  be moved to ▶ in progress — started work is never counted as missed), every
+  N days, specific weekdays, day of month; every repeat is a materialized
+  **occurrence** you can mark ✅ done, ⏭ postpone (15 min/1 h/4 h/1 day) or
+  ⏭ skip right from the reminder message.
+- **One ⚙️ settings screen** per user: reminders (fixed times or interval
+  mode), quiet hours, time zone, how long your chosen location stays valid,
+  chart horizon, language and the **platform linking status** (Telegram/VK).
+- Only the newest screen stays clickable: keyboards of older messages are
+  stripped automatically.
 - **No noise**: if you have no tasks today, or none match your current place,
   the bot says nothing. Stale location → it just asks "Where are you now?".
 - **Statistics**: text summary, CSV/XLSX export, PNG charts (GitHub-style
@@ -67,7 +71,7 @@ VK API uses ordinary HTTPS, so VK takes a regular HTTP/SOCKS5 proxy URL.
 | `/tasks` (`/задачи`) | tasks for the current place |
 | `/task` (`/задача`) | create a task (guided dialog) |
 | `/places` (`/места`) | manage places |
-| `/reminders` (`/напоминания`) | reminder settings |
+| `/settings` (`/настройки`; `/reminders` alias) | all user settings |
 | `/stats` (`/статистика`) `[week\|month\|year\|all] [csv\|xlsx\|chart]` | reports |
 | `/link` / `/unlink` (`/привязать` / `/отвязать`) | link Telegram ↔ VK |
 | `/lang` | switch language (ru/en) |

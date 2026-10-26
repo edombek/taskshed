@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from taskshed.config import BotCfg
-from taskshed.core.models import Account, User, UserSettings
+from taskshed.core.models import Account, Platform, User, UserSettings
 from taskshed.core.models import Place as PlaceDC
 from taskshed.i18n import normalize, t
 from taskshed.messaging.base import ButtonRows, IMessenger, RawEvent
@@ -27,7 +27,8 @@ COMMANDS = {
     "задача": "task", "task": "task",
     "места": "places", "places": "places",
     "удалить": "delete", "delete": "delete",
-    "напоминания": "reminders", "reminders": "reminders",
+    "напоминания": "settings", "reminders": "settings",
+    "настройки": "settings", "settings": "settings",
     "статистика": "stats", "stats": "stats",
     "привязать": "link", "link": "link",
     "отвязать": "unlink", "unlink": "unlink",
@@ -290,7 +291,7 @@ class BotApp:
         return [
             [(t("menu_where", lang), "cmd:where"), (t("menu_tasks", lang), "cmd:tasks")],
             [(t("menu_task", lang), "cmd:task"), (t("menu_places", lang), "cmd:places")],
-            [(t("menu_reminders", lang), "cmd:reminders"),
+            [(t("menu_settings", lang), "cmd:settings"),
              (t("menu_stats", lang), "cmd:stats")],
         ]
 
@@ -425,10 +426,15 @@ class BotApp:
     async def _set_lang(self, ctx: Ctx, lang: str) -> None:
         await self.store.set_language(ctx.user.id, lang)
         ctx.user.language = lang
+        ctx.lang = lang
+        if (ctx.user.id, ctx.account.id) in self._rem_msgs:
+            # the settings screen itself switches language — no extra message
+            await self._settings_status(ctx)
+            return
         await ctx.reply(t("lang_set", lang))
 
-    async def _cmd_reminders(self, ctx: Ctx, _: str) -> None:
-        await self._rem_status(ctx)
+    async def _cmd_settings(self, ctx: Ctx, _: str) -> None:
+        await self._settings_status(ctx)
 
     def _stats_text(self, ctx: Ctx, past, period: str) -> str:
         agg: dict[int, dict] = {}
@@ -1039,21 +1045,41 @@ class BotApp:
 
     # ---------- reminder settings ----------
 
-    async def _rem_status(self, ctx: Ctx) -> None:
+    @staticmethod
+    def _platform_label(name: str) -> str:
+        return {"telegram": "Telegram", "vk": "VK"}.get(name, name.title())
+
+    async def _settings_status(self, ctx: Ctx) -> None:
+        """One screen with everything this user can configure."""
         st = ctx.settings
-        status = t("reminders_status", ctx.lang,
+        accounts = await self.store.get_accounts(ctx.user.id)
+        linked = {str(a.platform) for a in accounts}
+        platforms = ", ".join(
+            f"{self._platform_label(p)} {'✓' if p in linked else '✗'}"
+            for p in (str(e) for e in Platform))
+        status = t("settings_status", ctx.lang,
                    on=t("rem_on" if st.reminders_on else "rem_off", ctx.lang),
                    mode=self._rem_mode_label(st, ctx.lang),
                    quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
-                   ttl=st.location_ttl_hours, tz=st.tz)
+                   ttl=st.location_ttl_hours, horizon=st.stats_horizon_days,
+                   tz=st.tz, platforms=platforms,
+                   language="Русский" if ctx.lang == "ru" else "English")
         rows = [
             [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
             [(t("btn_rem_when", ctx.lang), "rem:when")],
             [(t("btn_rem_quiet", ctx.lang), "rem:quiet"),
              (t("btn_rem_ttl", ctx.lang), "rem:ttl")],
-            [(t("btn_rem_tz", ctx.lang), "rem:tz")],
-            [(t("btn_back", ctx.lang), "menu:back")],
+            [(t("btn_rem_tz", ctx.lang), "rem:tz"),
+             (t("btn_rem_horizon", ctx.lang), "rem:horizon")],
+            [(t("btn_rem_lang", ctx.lang), "rem:lang"),
+             (t("btn_rem_link", ctx.lang), "rem:link")],
         ]
+        for acc in accounts:
+            if acc.id != ctx.account.id:
+                rows.append([(t("btn_unlink", ctx.lang,
+                                 platform=self._platform_label(str(acc.platform))),
+                              f"rem:unlink:{acc.id}")])
+        rows.append([(t("btn_back", ctx.lang), "menu:back")])
         ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
         key = (ctx.user.id, ctx.account.id)
         mid = self._rem_msgs.get(key)
@@ -1081,7 +1107,7 @@ class BotApp:
                 ctx.user.id, reminders_on=not ctx.settings.reminders_on,
             )
             ctx.settings = st
-            await self._rem_status(ctx)
+            await self._settings_status(ctx)
             return
         if arg == "when":
             # one entry point for both modes: pick the mode, then the value
@@ -1096,14 +1122,41 @@ class BotApp:
             return
         if arg == "back":
             # leave the sub-question without leaving the settings screen
-            await self._rem_status(ctx)
+            self._pending_inputs.pop(ctx.user.id, None)  # drop awaited value
+            await self._settings_status(ctx)
             return
-        if arg in ("times", "interval", "quiet", "ttl", "tz"):
+        if arg == "lang":
+            ctx.suppress_menu = True
+            await ctx.reply(t("lang_menu", ctx.lang),
+                            [[("Русский", "lang:ru"), ("English", "lang:en")],
+                             [(t("btn_back", ctx.lang), "rem:back")]])
+            return
+        if arg == "link":
+            code = await self.store.create_link_code(ctx.user.id, ctx.ev.platform)
+            ctx.suppress_menu = True
+            await ctx.reply(t("link_code_msg", ctx.lang, code=code),
+                            [[(t("btn_back", ctx.lang), "rem:back")]])
+            return
+        if arg.startswith("unlink:"):
+            await self._cb_unlink_acc(ctx, arg.split(":", 1)[1])
+            return
+        if arg in ("times", "interval", "quiet", "ttl", "tz", "horizon"):
             self._pending_inputs[ctx.user.id] = f"reminput:{arg}"
             ctx.suppress_menu = True  # the next message is the value itself
-            back = [[(t("btn_back", ctx.lang),
-                      "rem:back" if arg in ("times", "interval") else "menu:back")]]
-            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang), back)
+            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang),
+                            [[(t("btn_back", ctx.lang), "rem:back")]])
+
+    async def _cb_unlink_acc(self, ctx: Ctx, acc_id: str) -> None:
+        """Unlinking from the settings screen: the row named the account."""
+        if not acc_id.isdigit():
+            return
+        accounts = await self.store.get_accounts(ctx.user.id)
+        target = next((a for a in accounts if a.id == int(acc_id)), None)
+        if target is None or len(accounts) < 2:
+            return  # never leave a user with no account
+        await self.store.detach_account(target.id, ctx.user.id)
+        await ctx.reply(t("unlink_done", ctx.lang))
+        await self._settings_status(ctx)
 
     async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
         values: dict = {}
@@ -1145,7 +1198,13 @@ class BotApp:
                                   hint=t("rem_ask_tz", ctx.lang)))
                 return
             values = {"tz": text.strip()}
+        elif field == "horizon":
+            if not text.isdigit() or not 1 <= int(text) <= 90:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_horizon", ctx.lang)))
+                return
+            values = {"stats_horizon_days": int(text)}
         st = await self.store.update_settings(ctx.user.id, **values)
         ctx.settings = st
         # value changed → the settings screen updates in place, no new copy
-        await self._rem_status(ctx)
+        await self._settings_status(ctx)

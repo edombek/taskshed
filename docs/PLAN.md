@@ -104,8 +104,8 @@ Checklist of the implementation roadmap. EN summary in
       screen; ⬅️ Назад in the picker returns to settings (in place)
 - [x] Task lists/digests: «▶ В работе» status for tasks stretched over time
       (start + ready-by deadline), instead of one-off tasks being a moment
-- [ ] ⚙️ «Настройки» instead of 🔔 «Напоминания»: one per-user settings screen
-      incl. linked platforms status and chart horizon
+- [x] ⚙️ «Настройки» instead of 🔔 «Напоминания»: one per-user settings screen
+      incl. linked platforms status, language and chart horizon
 - [ ] Activity chart shows planned tasks N days ahead (setting, default 1
       week) and an hour-level view for short periods
 - [x] Stale keyboards disarmed: only the newest screen in a chat keeps its

@@ -1,6 +1,6 @@
 {
-  "greet": "Hi! I will remind you about your tasks wherever you are.\nCreate places (/places) and tasks (/task), and I'll write when there is something to do.\n\nCommands: /where /tasks /task /places /reminders /stats /link /lang",
-  "help_text": "Commands:\n/where — my current place\n/tasks — tasks for the current place\n/task — create a task\n/places — list places\n/delete <n> — delete a task\n/reminders — reminder settings\n/stats [week|month|year|all] [csv|xlsx|chart]\n/link — connect the other platform\n/lang — language (ru/en)",
+  "greet": "Hi! I will remind you about your tasks wherever you are.\nCreate places (/places) and tasks (/task), and I'll write when there is something to do.\n\nCommands: /where /tasks /task /places /settings /stats /link /lang",
+  "help_text": "Commands:\n/where — my current place\n/tasks — tasks for the current place\n/task — create a task\n/places — list places\n/delete <n> — delete a task\n/settings — all settings (reminders, language, platforms)\n/stats [week|month|year|all] [csv|xlsx|chart]\n/link — connect the other platform\n/lang — language (ru/en)",
   "unknown_cmd": "Unknown command. Try /help",
   "places_list": "Your places: {names}",
   "no_places": "You have no places yet. Add one by typing, e.g. Home",
@@ -48,7 +48,6 @@
   "wizard_cancelled": "Cancelled.",
   "wizard_no_selection": "Pick at least one day.",
   "wizard_bad_input": "Didn't get that. {hint}",
-  "reminders_status": "Reminders: {on}\nMode: {mode}\nQuiet hours: {quiet}\nLocation valid: {ttl} h\nTime zone: {tz}",
   "rem_on": "on",
   "rem_off": "off",
   "btn_rem_toggle": "🔕/🔔 On/Off",
@@ -77,7 +76,6 @@
   "menu_tasks": "📋 Tasks",
   "menu_task": "➕ New task",
   "menu_places": "🏠 Places",
-  "menu_reminders": "🔔 Reminders",
   "menu_stats": "📊 Stats",
   "wizard_deadline_past": "That moment has already passed — pick today or later.\n{hint}",
   "btn_today": "📅 Today",
@@ -145,5 +143,12 @@
   "task_row_range": "{n}. {title} — from {start} to {due}",
   "task_started_mark": " ▶in progress",
   "btn_wip": "▶ In progress",
-  "msg_wip": "In progress: “{title}” ▶"
+  "msg_wip": "In progress: “{title}” ▶",
+  "menu_settings": "⚙️ Settings",
+  "settings_status": "⚙️ Settings\n\nReminders: {on}\nMode: {mode}\nQuiet hours: {quiet}\nLocation valid: {ttl} h\nChart horizon: {horizon} d\nTime zone: {tz}\nLanguage: {language}\nPlatforms: {platforms}",
+  "btn_rem_horizon": "📊 Chart horizon",
+  "btn_rem_lang": "🌐 Language",
+  "btn_rem_link": "🔗 Link a platform",
+  "btn_unlink": "🗑 Unlink {platform}",
+  "rem_ask_horizon": "How many days ahead should the activity chart reach? (1–90, e.g. 7)"
 }

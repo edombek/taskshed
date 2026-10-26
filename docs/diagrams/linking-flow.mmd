@@ -5,7 +5,7 @@ sequenceDiagram
     participant Core as BotApp + Store
     participant VK as VK bot
 
-    U->>TG: /link  (RU: /привязать)
+    U->>TG: /link  (RU: /привязать)<br/>or ⚙️ Настройки → 🔗 Привязать платформу
     TG->>Core: create_link_code(user, telegram)<br/>8 chars, TTL 10 min, replaces any previous code
     Core-->>TG: K3F9A2B7
     TG-->>U: "Send to the VK bot: /link K3F9A2B7"
@@ -17,6 +17,7 @@ sequenceDiagram
         Core->>Core: link_audit rows: link, merge
         Core-->>VK: OK
         VK-->>U: "Accounts linked. Reminders go to both chats."
+        Core-->>U: ⚙️ Настройки shows "Платформы: Telegram ✓, VK ✓"<br/>plus a «🗑 Отвязать VK» row (rem:unlink:ID)
     else expired / used / unknown
         Core-->>VK: None
         VK-->>U: "Code invalid. Request a new one."

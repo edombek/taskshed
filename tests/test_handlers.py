@@ -230,7 +230,7 @@ class TestMenuAndDeadline:
         await send(env, "/start")
         flat = [cb for row in fake.last_buttons() for _, cb in row]
         assert {"cmd:where", "cmd:tasks", "cmd:task", "cmd:places",
-                "cmd:reminders", "cmd:stats"} == set(flat)
+                "cmd:settings", "cmd:stats"} == set(flat)
         await send(env, "/help")
         assert any(cb.startswith("cmd:")
                    for _, cb in fake.last_buttons()[0])
@@ -761,15 +761,15 @@ class TestBackOnEveryPrompt:
     async def test_rem_prompt_has_back_and_cancels_input(self, env):
         app, store, fake = env
         await send(env, "Дом")
-        await send(env, "/напоминания")
+        f = await send(env, "/настройки")
+        assert "⚙️ Настройки" in f.texts()[0]
         f = await send(env, cb="rem:ttl")
         flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert "menu:back" in flat
+        assert flat == ["rem:back"]  # back returns to the settings screen
         assert app._pending_inputs  # awaiting a value now
-        f = await send(env, cb="menu:back")
+        f = await send(env, cb="rem:back")
         assert not app._pending_inputs
-        flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert "cmd:tasks" in flat  # main menu returned
+        assert "Напоминания:" in f.texts()[0]  # the settings screen again
         # a later number is no longer consumed as the ttl value
         await send(env, "999")
         user = await store.get_user_by_account("telegram", PID)
@@ -905,3 +905,57 @@ class TestWorkInProgress:
         digest = await app.build_digest(
             (await store.get_user_by_account("telegram", PID)).id, settings, place)
         assert digest and any(cb.startswith("wip:") for row in digest[1] for _, cb in row)
+
+
+class TestSettingsScreen:
+    """One «⚙️ Настройки» screen for everything a user can configure."""
+
+    async def test_screen_shows_platforms_and_chart_horizon(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        f = await send(env, "/настройки")  # /напоминания stays as an alias
+        text = f.texts()[0]
+        assert "⚙️ Настройки" in text
+        assert "Telegram ✓" in text and "VK ✗" in text
+        assert "График вперёд: 7 дн." in text
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert {"rem:toggle", "rem:when", "rem:quiet", "rem:ttl", "rem:tz",
+                "rem:horizon", "rem:lang", "rem:link", "menu:back"} <= set(flat)
+        assert not any(cb.startswith("rem:unlink") for cb in flat)
+
+    async def test_chart_horizon_edits_the_screen_in_place(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await app.handle(RawEvent("telegram", PID, text="/настройки"))
+        await app.handle(RawEvent("telegram", PID, callback="rem:horizon"))
+        await app.handle(RawEvent("telegram", PID, text="14"))
+        screens = [m for m in fake.sent if "⚙️ Настройки" in m.text]
+        assert len(screens) == 1 and "График вперёд: 14 дн." in screens[0].text
+        assert (await store.get_settings(user.id)).stats_horizon_days == 14
+
+    async def test_language_switch_renders_settings_anew(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, text="/настройки"))
+        screen = fake.sent[-1]
+        await app.handle(RawEvent("telegram", PID, callback="rem:lang"))
+        assert {"lang:ru", "lang:en"} <= {cb for row in fake.last_buttons()
+                                          for _, cb in row}
+        await app.handle(RawEvent("telegram", PID, callback="lang:en"))
+        assert "⚙️ Settings" in screen.text and "Reminders:" in screen.text
+
+    async def test_linked_platform_can_be_unlinked_from_settings(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        vk_user, vk_acc = await store.register_account("vk", "777")
+        await store.attach_account(vk_acc, user.id)
+        await store.merge_user(vk_user.id, user.id)
+        await app.handle(RawEvent("telegram", PID, text="/настройки"))
+        screen = fake.sent[-1]
+        assert "Telegram ✓, VK ✓" in screen.text
+        await app.handle(RawEvent("telegram", PID, callback=f"rem:unlink:{vk_acc.id}"))
+        assert fake.find("отвязан")
+        assert "VK ✗" in screen.text
+        assert [a.platform for a in await store.get_accounts(user.id)] == ["telegram"]

@@ -72,6 +72,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and its value are shown in Russian on the settings screen («Режим:
   по временам (09:00 13:00)»), and the prompts explain what the values
   mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
+- **🔔 Напоминания → ⚙️ Настройки**: one screen now holds everything a user
+  configures — reminders (mode and value), quiet hours, location validity,
+  time zone, chart horizon, language and the **platform linking status**
+  (`Telegram ✓, VK ✗`, one-time code generation, «🗑 Отвязать VK» rows);
+  `/настройки` (`/settings`) replaces `/напоминания` (still an alias), and
+  switching language re-renders that same screen.
 - **Tasks stretched over time**: a one-off task is no longer a single instant —
   the wizard asks «Когда приступить?» and «До какого времени закончить?»
   (`tasks.start_at` + `tasks.deadline`, Alembic `f2a6b83c14d9`); lists and
