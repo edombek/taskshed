@@ -78,10 +78,10 @@ class Ctx:
         self.tz = ZoneInfo(settings.tz)
 
     async def reply(self, text: str, buttons: ButtonRows | None = None) -> None:
-        if buttons:
-            await self.messenger.send_buttons(self.account, text, buttons)
-        else:
-            await self.messenger.send_text(self.account, text)
+        # plain command replies get the command menu by default, so after any
+        # finished command the buttons for the next one are right there
+        await self.messenger.send_buttons(self.account, text,
+                                          buttons or self.app._menu_rows(self.lang))
 
     async def place_buttons(self, question_key: str) -> None:
         places = await self.app.store.list_places(self.user.id)
@@ -625,7 +625,7 @@ class BotApp:
             lines.append(t("task_row", ctx.lang, n=i, title=task.title, due=due_local) + mark)
             rows.append([(t("btn_done", ctx.lang), f"done:{occ.id}"),
                          (t("btn_snooze", ctx.lang), f"snooze:{occ.id}")])
-        await ctx.reply("\n".join(lines), rows)
+        await ctx.reply("\n".join(lines), rows + self._menu_rows(ctx.lang))
 
     async def build_digest(self, user_id: int, settings: UserSettings, place: PlaceDC):
         """(text, buttons) for today's tasks at `place`, or None if nothing."""

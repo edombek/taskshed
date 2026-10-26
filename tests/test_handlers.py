@@ -358,3 +358,27 @@ class TestStatsIncludePlanned:
         await store.materialize_occurrences(task, datetime.now(UTC).date(), 8, "UTC")
         f = await send(env, "/статистика всё")
         assert "запланировано" in f.texts()[-1]
+
+
+class TestMenuOnEveryReply:
+    async def test_plain_reply_gets_menu_by_default(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        f = await send(env, "/отмена")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat
+
+    async def test_task_list_has_menu_after_task_buttons(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        p = (await store.list_places(user.id))[0]
+        await store.set_location(user.id, p.id)
+        anchor = datetime.now(UTC).date().isoformat()
+        task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": anchor}, time(9, 0))
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
+        f = await send(env, "/задачи")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert any(cb.startswith("done:") for cb in flat)
+        assert "cmd:task" in flat
