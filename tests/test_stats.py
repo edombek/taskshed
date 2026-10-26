@@ -107,3 +107,31 @@ class TestCharts:
         assert n == 53
         # empty window helper must not be used for empty data
         assert charts.github_heatmap({}, "ru", "/tmp/none.png") == ""
+
+    def test_heatmap_window_reaches_planned_days(self):
+        # a task planned 6 days ahead must land inside the drawn window
+        d0 = date(2026, 10, 26)
+        days = {d0 - timedelta(days=3): {"done": 1},
+                d0 + timedelta(days=6): {"pending": 1}}
+        first, n = charts._heatmap_window(days, end=date(2026, 11, 5),
+                                          min_weeks=5, max_weeks=53)
+        last_monday = first + timedelta(weeks=n - 1)
+        assert last_monday >= d0  # the week holding the planned day is drawn
+
+    def test_hourly_heatmap(self, tmp_path):
+        grid = {(date(2026, 10, 26), h): (h % 5) for h in range(24)}
+        grid[(date(2026, 10, 27), 9)] = 3
+        out = str(tmp_path / "hours.png")
+        assert charts.hourly_heatmap(grid, "ru", out) == out
+        assert os.path.getsize(out) > 500
+        assert charts.hourly_heatmap({}, "ru", out) == ""
+
+    def test_completions_by_hour(self):
+        from taskshed.core.stats import completions_by_hour
+
+        stamps = [datetime(2026, 10, 26, 7, 30, tzinfo=UTC),
+                  datetime(2026, 10, 26, 7, 55, tzinfo=UTC),
+                  datetime(2026, 10, 27, 20, 5, tzinfo=UTC)]
+        grid = completions_by_hour(stamps, "Europe/Moscow")
+        assert grid[(date(2026, 10, 26), 10)] == 2  # 07:30Z = 10:30 MSK
+        assert grid[(date(2026, 10, 27), 23)] == 1  # 20:05Z = 23:05 MSK

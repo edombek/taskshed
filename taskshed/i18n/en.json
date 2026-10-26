@@ -88,7 +88,7 @@
   "btn_per_month": "🗓 Month",
   "btn_per_year": "🗓 Year",
   "btn_per_all": "♾ All",
-  "btn_fmt_chart": "📊 Activity chart",
+  "btn_fmt_chart": "📈 Daily chart",
   "btn_fmt_csv": "📄 CSV",
   "btn_fmt_xlsx": "📑 XLSX",
   "snooze_ask": "How long should I snooze this reminder?",
@@ -118,7 +118,7 @@
   "hm_m10": "Oct",
   "hm_m11": "Nov",
   "hm_m12": "Dec",
-  "stats_heat_caption": "Daily activity: darker square = more completions; red inset = missed, blue inset = planned",
+  "stats_heat_caption": "Daily activity: brighter square = more completions; red = missed, blue = planned (within the chosen horizon), orange = skipped",
   "lang_set": "Language: English",
   "digest_where": "📍 Where are you now?",
   "chart_daily": "Completion by day",
@@ -150,5 +150,7 @@
   "btn_rem_lang": "🌐 Language",
   "btn_rem_link": "🔗 Link a platform",
   "btn_unlink": "🗑 Unlink {platform}",
-  "rem_ask_horizon": "How many days ahead should the activity chart reach? (1–90, e.g. 7)"
+  "rem_ask_horizon": "How many days ahead should the activity chart reach? (1–90, e.g. 7)",
+  "btn_fmt_hours": "⏱ Hourly chart",
+  "stats_hours_caption": "Hourly activity: each row is a day, each column an hour; brighter square = more tasks finished in that hour"
 }

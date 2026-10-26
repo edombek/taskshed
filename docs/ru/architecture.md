@@ -186,7 +186,7 @@ erDiagram
 | `taskshed/messaging/` | порт + `FakeMessenger` (`base.py`) + `telegram.py`, `vk.py` |
 | `taskshed/bot/app.py` | `BotApp`: команды чата, диалоги-анкеты, кнопки |
 | `taskshed/scheduler/jobs.py` | ежеминутный тик напоминаний, правила молчания |
-| `taskshed/stats/` | графики matplotlib, экспорт CSV/XLSX |
+| `taskshed/stats/` | графики matplotlib (дневные и почасовые карты активности), экспорт CSV/XLSX |
 | `taskshed/i18n/` | каталоги ru/en JSON + `t()` |
 | `taskshed/config.py` | конфиг YAML + env, прокси по платформам |
 | `taskshed/entrypoints/` | `run_telegram`, `run_vk`, `run_all` |

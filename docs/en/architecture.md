@@ -186,7 +186,7 @@ no network, no real platforms.
 | `taskshed/messaging/` | port + `FakeMessenger` (`base.py`) + `telegram.py`, `vk.py` |
 | `taskshed/bot/app.py` | `BotApp`: chat commands, dialogs/wizards, buttons |
 | `taskshed/scheduler/jobs.py` | per-minute reminder tick, silence rules |
-| `taskshed/stats/` | matplotlib charts, CSV/XLSX export |
+| `taskshed/stats/` | matplotlib charts (daily + hourly activity maps), CSV/XLSX export |
 | `taskshed/i18n/` | ru/en JSON catalogs + `t()` |
 | `taskshed/config.py` | YAML + env config (per-platform proxy blocks) |
 | `taskshed/entrypoints/` | `run_telegram`, `run_vk`, `run_all` |

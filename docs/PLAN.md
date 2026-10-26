@@ -106,8 +106,9 @@ Checklist of the implementation roadmap. EN summary in
       (start + ready-by deadline), instead of one-off tasks being a moment
 - [x] ⚙️ «Настройки» instead of 🔔 «Напоминания»: one per-user settings screen
       incl. linked platforms status, language and chart horizon
-- [ ] Activity chart shows planned tasks N days ahead (setting, default 1
-      week) and an hour-level view for short periods
+- [x] Activity chart shows planned tasks N days ahead (setting
+      `stats_horizon_days`, default 1 week) and an hour-level map for short
+      periods (week: day rows × 24 hour columns, from completion timestamps)
 - [x] Stale keyboards disarmed: only the newest screen in a chat keeps its
       inline buttons (`edit_buttons(..., [])` port convention)
 

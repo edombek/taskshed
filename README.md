@@ -25,10 +25,11 @@ platform-independent core.
   stripped automatically.
 - **No noise**: if you have no tasks today, or none match your current place,
   the bot says nothing. Stale location → it just asks "Where are you now?".
-- **Statistics**: text summary, CSV/XLSX export, PNG charts (GitHub-style
-  activity heatmap with missed/planned/skipped markers, top tasks/places,
-  completion trend) — for any period or
-  the whole history.
+- **Statistics**: text summary, CSV/XLSX export, PNG charts — a GitHub-style
+  activity heatmap (missed / planned / skipped markers, planned tasks visible
+  up to the configured horizon ahead) plus an **hour-level map for short
+  periods**, top tasks/places, completion trend — for any period or the whole
+  history.
 - **Multi-account**: link your Telegram and VK identities with a one-time
   code (`/link`); data and reminders are shared.
 - Chat interfaces in **Russian and English** (`/lang`).

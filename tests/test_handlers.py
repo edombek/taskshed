@@ -959,3 +959,65 @@ class TestSettingsScreen:
         assert fake.find("отвязан")
         assert "VK ✗" in screen.text
         assert [a.platform for a in await store.get_accounts(user.id)] == ["telegram"]
+
+
+class TestChartHorizonAndHours:
+    """Charts look ahead (setting, default 1 week) and short periods go hourly."""
+
+    async def _done_week(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        today = datetime.now(UTC).date()
+        task = await store.create_task(
+            user.id, pid, "Отчёт", ScheduleType.EVERY_N_DAYS,
+            {"n": 1, "anchor": today.isoformat()}, time(9, 0))
+        await store.materialize_occurrences(task, today, 1, "UTC")
+        for occ, _ in await store.occurrences_today(user.id, today, "UTC"):
+            await store.mark_done(occ.id, "telegram")
+        return app, store, fake, user
+
+    async def test_week_period_offers_the_hourly_chart(self, env):
+        app, store, fake, _ = await self._done_week(env)
+        await send(env, "/статистика")
+        f = await send(env, cb="per:week")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "fmt:hours:week" in flat and "fmt:chart:week" in flat
+        app._pending_inputs.clear()
+        await app.handle(RawEvent("telegram", PID, callback="fmt:hours:week"))
+        assert any(m.image for m in fake.sent)
+
+    async def test_longer_periods_do_not_offer_hourly(self, env):
+        app, store, fake, _ = await self._done_week(env)
+        await send(env, "/статистика")
+        f = await send(env, cb="per:month")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "fmt:chart:month" in flat and "fmt:hours:month" not in flat
+
+    async def test_planned_task_shows_up_within_the_horizon(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        when = datetime.now(UTC) + timedelta(days=5)
+        await store.create_task(user.id, pid, "Полка", ScheduleType.ONCE, {},
+                                time(9, 0), deadline=when, start_at=when)
+        # 5 days ahead: outside the old +1 day window, inside the week horizon
+        await app.handle(RawEvent("telegram", PID, text="/статистика неделя график"))
+        assert any(m.image for m in fake.sent)
+
+    async def test_horizon_setting_widens_the_window(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        when = datetime.now(UTC) + timedelta(days=20)
+        await store.create_task(user.id, pid, "Заказ", ScheduleType.ONCE, {},
+                                time(9, 0), deadline=when, start_at=when)
+        await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
+        assert not any(m.image for m in fake.sent)  # beyond the default 7 days
+        assert fake.find("срабатываний не было")
+        await store.update_settings(user.id, stats_horizon_days=30)
+        await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
+        assert any(m.image for m in fake.sent)

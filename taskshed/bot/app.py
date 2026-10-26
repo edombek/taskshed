@@ -235,10 +235,10 @@ class BotApp:
 
     async def ensure_materialized(self, ctx: Ctx) -> None:
         today = datetime.now(ctx.tz).date()
+        # charts may look further ahead than the default reminder horizon
+        horizon = max(self.cfg.occurrence_horizon_days, ctx.settings.stats_horizon_days)
         for task in await self.store.list_tasks(ctx.user.id):
-            await self.store.materialize_occurrences(
-                task, today, self.cfg.occurrence_horizon_days, ctx.settings.tz,
-            )
+            await self.store.materialize_occurrences(task, today, horizon, ctx.settings.tz)
 
     async def _on_text(self, ctx: Ctx, text: str) -> None:
         wizard = self.wizards.get(ctx.user.id)
@@ -367,27 +367,36 @@ class BotApp:
     async def _stats_show(self, ctx: Ctx, period: str, fmt: str | None) -> None:
         name, days = PERIODS[period]
         now = datetime.now(UTC)
-        # +1 day so today's still-future EOD deadlines belong to the period
-        end = now + timedelta(days=1)
-        start = (end - timedelta(days=days)) if days else datetime(2000, 1, 1, tzinfo=UTC)
+        start = (now - timedelta(days=days)) if days else datetime(2000, 1, 1, tzinfo=UTC)
+        # charts look stats_horizon_days into the future, so planned tasks are
+        # visible; text/CSV reports keep describing what already happened
+        chart = fmt in ("chart", "график", "hours")
+        future = max(1, ctx.settings.stats_horizon_days) if chart else 1
+        end = now + timedelta(days=future)
+        if chart:
+            await self.ensure_materialized(ctx)
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
         # planned (future) occurrences are kept on purpose: they show as
         # pending/«в плане» in reports and as blue insets on the heatmap
         if not occs:
             await ctx.reply(t("stats_no_data", ctx.lang))
             return
-        if fmt in ("csv", "xlsx", "график", "chart"):
-            await self._stats_file(ctx, occs, name, fmt)
+        if fmt in ("csv", "xlsx", "chart", "график", "hours"):
+            await self._stats_file(ctx, occs, name, fmt, start, end)
             # the file/chart ends the answer: the menu follow-up must follow
             ctx.replied = True
             return
-        ctx.suppress_menu = True
-        await ctx.reply(self._stats_text(ctx, occs, name), [
-            [(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")],
+        rows = [[(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")]]
+        if name == "week":
+            # short periods also get the hour-level rendering
+            rows.append([(t("btn_fmt_hours", ctx.lang), f"fmt:hours:{name}")])
+        rows += [
             [(t("btn_fmt_csv", ctx.lang), f"fmt:csv:{name}"),
              (t("btn_fmt_xlsx", ctx.lang), f"fmt:xlsx:{name}")],
             [(t("btn_back", ctx.lang), "menu:back")],
-        ])
+        ]
+        ctx.suppress_menu = True
+        await ctx.reply(self._stats_text(ctx, occs, name), rows)
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
         if not arg:
@@ -457,7 +466,8 @@ class BotApp:
                            total=a["total"], percent=pct))
         return "\n".join(lines)
 
-    async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str) -> None:
+    async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str,
+                          start: datetime, end: datetime) -> None:
         import os
         import shutil
         import tempfile
@@ -481,6 +491,16 @@ class BotApp:
                 export.write_xlsx(task_rows, place_rows, path)
                 await ctx.messenger.send_document(
                     ctx.account, path, "stats.xlsx", t("stats_sent_doc", ctx.lang))
+            elif fmt == "hours":
+                # day rows × hour columns: what a short period really looked like
+                stamps = await self.store.completions_in_range(ctx.user.id, start, end)
+                grid = sagg.completions_by_hour(stamps, ctx.settings.tz)
+                path = os.path.join(tmp, "hours.png")
+                if not charts.hourly_heatmap(grid, ctx.lang, path):
+                    await ctx.reply(t("stats_no_data", ctx.lang))
+                    return
+                await ctx.messenger.send_image(
+                    ctx.account, path, t("stats_hours_caption", ctx.lang))
             else:  # chart: GitHub-style activity map (daily bars retired)
                 heat = os.path.join(tmp, "activity.png")
                 if not charts.github_heatmap(days, ctx.lang, heat):

@@ -51,6 +51,45 @@ def daily_bar(days: dict[date, dict], lang: str, out_path: str) -> str:
     return out_path
 
 
+def hourly_heatmap(grid: dict[tuple[date, int], int], lang: str, out_path: str) -> str:
+    """Day rows × 24 hour columns — the short-period view of the same data.
+
+    Same dark palette as the daily map: the base square is the number of
+    completions finished inside that hour, empty hours stay dark gray.
+    """
+    from matplotlib.patches import Rectangle
+
+    if not grid:
+        return ""
+    days = sorted({d for d, _ in grid})
+    n_days = len(days)
+
+    fig, ax = plt.subplots(figsize=(0.36 * 24 + 3.0, 0.46 * n_days + 1.3))
+    fig.patch.set_facecolor(HEAT_BG)
+    ax.set_facecolor(HEAT_BG)
+    for row, d in enumerate(days):
+        for hour in range(24):
+            done = int(grid.get((d, hour), 0))
+            ax.add_patch(Rectangle((hour, row), 0.86, 0.86,
+                                   facecolor=HEAT_GREENS[min(done, 4)],
+                                   edgecolor=HEAT_BG, linewidth=0.4))
+
+    # day labels on the left, hour labels under the grid every third hour
+    for row, d in enumerate(days):
+        ax.text(-0.35, row + 0.43, d.strftime("%d.%m"), fontsize=6.5, ha="right",
+                va="center", color=HEAT_TEXT)
+    for hour in range(0, 24, 3):
+        ax.text(hour + 0.43, n_days + 0.3, f"{hour:02d}", fontsize=6.5,
+                ha="center", va="center", color=HEAT_TEXT)
+
+    ax.set_xlim(-2.2, 24)
+    ax.set_ylim(n_days + 0.9, -0.6)  # inverted: the first day on top
+    ax.axis("off")
+    fig.savefig(out_path, dpi=110, facecolor=HEAT_BG, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
 def top_tasks(task_rows: list[dict], lang: str, out_path: str, limit: int = 10) -> str:
     rows = task_rows[:limit]
     labels = [r["title"][:28] for r in rows][::-1]
