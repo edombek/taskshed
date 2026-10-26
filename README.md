@@ -15,13 +15,14 @@ platform-independent core.
 - Tasks split by **places** you define yourself (`/places`).
 - Schedules: one-off with deadline, every N days, specific weekdays,
   day of month; every repeat is a materialized **occurrence** you can mark
-  ✅ done or ⏭ postpone right from the reminder message.
+  ✅ done, ⏭ postpone (15 min/1 h/4 h/1 day) or ⏭ skip right from the
+  reminder message.
 - Per-user **reminder settings**: fixed times or interval mode, quiet hours,
   time zone, how long your chosen location stays valid.
 - **No noise**: if you have no tasks today, or none match your current place,
   the bot says nothing. Stale location → it just asks "Where are you now?".
-- **Statistics**: text summary, CSV/XLSX export, PNG charts (daily bar,
-  GitHub-style activity heatmap with missed/planned markers, top tasks/places,
+- **Statistics**: text summary, CSV/XLSX export, PNG charts (GitHub-style
+  activity heatmap with missed/planned/skipped markers, top tasks/places,
   completion trend) — for any period or
   the whole history.
 - **Multi-account**: link your Telegram and VK identities with a one-time

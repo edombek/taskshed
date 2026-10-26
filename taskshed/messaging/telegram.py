@@ -92,14 +92,15 @@ class TelegramAdapter:
     async def edit_buttons(self, account: Account, message_id: str, text: str,
                            buttons: ButtonRows) -> bool:
         try:
+            # Telethon signature: edit_message(entity, message=<id>, text=…)
             await self.client.edit_message(int(account.platform_user_id),
-                                           int(message_id), message=text,
+                                           int(message_id), text=text,
                                            buttons=inline_rows(buttons),
                                            parse_mode=None, link_preview=False)
             return True
         except Exception:  # deleted/stale message: caller re-sends instead
-            log.debug("edit_message failed (chat=%s id=%s)",
-                      account.platform_user_id, message_id)
+            log.info("edit_message failed (chat=%s id=%s)",
+                     account.platform_user_id, message_id)
             return False
 
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:

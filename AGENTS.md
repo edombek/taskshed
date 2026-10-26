@@ -58,17 +58,16 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
 
 - Commit messages: plain conventional-commit style, **no AI co-author trailers
   or AI markers** (owner's explicit choice — do not add them back).
-- GitHub: private repo `github.com/edombek/taskshed` (renamed from
-  `tg-bot-task-sheduler`), pushed with
-  `gh` (authenticated as `edombek`, ssh protocol). Global git identity is
-  `edombek <edombek@yandex.ru>` — do not override globally.
 - Docs: bilingual. `README.md` (English) + `README.ru.md` (Russian), cross-linked;
   mirrored `docs/en/` and `docs/ru/`; diagrams as Mermaid in `docs/diagrams/`
   (`.mmd` are the source of truth; docs/READMEs embed them as fenced ```mermaid
   blocks — GitHub renders those as vector — kept in sync by
   `scripts/sync_diagram_blocks.py` and guarded by `tests/test_docs_diagrams.py`;
   rendered 3x `.png` are committed and linked for offline readers, regenerate
-  with `scripts/render_diagrams.sh`);
+  with `scripts/render_diagrams.sh`). **When behavior/flows/schema change,
+  update the `.mmd` diagrams in the same commit** (statuses, buttons, new
+  interactions), then re-render PNGs and run `scripts/sync_diagram_blocks.py`
+  — the parity test only catches drifted copies, content staleness is on us);
   living checklist in `docs/PLAN.md`; `CHANGELOG.md` (Keep a Changelog).
   When code changes, update **both** language copies.
 - Tests: pytest (+pytest-asyncio). Chat-logic tests must go through the

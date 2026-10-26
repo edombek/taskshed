@@ -273,7 +273,7 @@ class BotApp:
 
     async def _cmd_task(self, ctx: Ctx, _: str) -> None:
         self.wizards[ctx.user.id] = {"kind": "task", "step": "title", "data": {}, "days": set()}
-        await ctx.reply(t("wizard_ask_title", ctx.lang))
+        await self._ask_step(ctx, self.wizards[ctx.user.id])
 
     async def _cmd_places(self, ctx: Ctx, arg: str) -> None:
         places = await self.store.list_places(ctx.user.id)
@@ -456,7 +456,8 @@ class BotApp:
         """Ask (or re-ask after Назад) the question for the current step."""
         step, back = w["step"], self._back_row(ctx, w)
         if step == "title":
-            await ctx.reply(t("wizard_ask_title", ctx.lang), back or None)
+            await ctx.reply(t("wizard_ask_title", ctx.lang),
+                            (back or []) + [[(t("btn_wz_cancel", ctx.lang), "wz:cancel")]])
         elif step == "place":
             await ctx.place_buttons("wizard_ask_place", back)
         elif step == "schedule":
@@ -644,6 +645,12 @@ class BotApp:
                 return
             w["step"] = w["hist"].pop()
             await self._ask_step(ctx, w)
+        elif action == "wz" and arg == "cancel":
+            # ✖ Отмена on the first wizard step (typing /отмена also works)
+            w = self.wizards.get(ctx.user.id)
+            if w and w.get("kind") == "task":
+                self.wizards.pop(ctx.user.id, None)
+                await ctx.reply(t("wizard_cancelled", ctx.lang))
         elif action == "menu" and arg == "back":
             # submenu screens offer ⬅️ Назад: return to the main command menu
             if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
@@ -735,9 +742,11 @@ class BotApp:
 
     async def _wd_buttons(self, ctx: Ctx, w: dict) -> None:
         # chosen days carry a ✅; on Telegram the message is edited in place
-        # instead of sending a fresh one per tap
-        rows = [[(("✅ " if i in w["days"] else "") + t(k, ctx.lang), f"wd:{i}")
-                 for i, k in enumerate(WD_KEYS)],
+        # instead of sending a fresh one per tap. Days split 4+3: seven tiny
+        # buttons per row get elided to "…" by clients once ✅ is added.
+        day_btns = [(("✅ " if i in w["days"] else "") + t(k, ctx.lang), f"wd:{i}")
+                    for i, k in enumerate(WD_KEYS)]
+        rows = [day_btns[:4], day_btns[4:],
                 [(t("wd_done", ctx.lang), "wdsubmit")]] + self._back_row(ctx, w)
         text = t("wizard_ask_days", ctx.lang)
         mid = w.get("wd_msg")

@@ -667,3 +667,14 @@ class TestWizardDaysToggle:
         await app.handle(RawEvent("telegram", PID, callback="wd:4"))
         labels = [lbl for row in fake.last_buttons() for lbl, _ in row]
         assert sum(1 for lbl in labels if lbl.startswith("✅")) == 1
+
+
+class TestWizardCancelButton:
+    async def test_title_step_has_cancel_button(self, env):
+        app, store, fake = env
+        f = await send(env, "/задача")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "wz:cancel" in flat
+        await send(env, cb="wz:cancel")
+        assert fake.find("Отменено")
+        assert not app.wizards

@@ -67,7 +67,7 @@ erDiagram
         int task_id FK "UNIQUE(task_id, due_at)"
         datetime due_at "deadline of this repeat, UTC"
         datetime reminder_at "when the reminder may fire"
-        string status "pending|done|missed"
+        string status "pending|done|missed|skipped"
     }
     completions {
         int occurrence_id PK "also FK to task_occurrences"

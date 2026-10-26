@@ -127,7 +127,7 @@ erDiagram
         int task_id FK "UNIQUE(task_id, due_at)"
         datetime due_at "deadline of this repeat, UTC"
         datetime reminder_at "when the reminder may fire"
-        string status "pending|done|missed"
+        string status "pending|done|missed|skipped"
     }
     completions {
         int occurrence_id PK "also FK to task_occurrences"
@@ -200,8 +200,10 @@ is what makes Telegram↔VK linking trivial.
 `schedule_type`: `once` · `every_n_days` · `weekdays` · `monthly_day`,
 parameters in `schedule_data` (JSON). Occurrences are materialized a few days
 ahead (`bot.occurrence_horizon_days`); each has `due_at`, `reminder_at`,
-`status ∈ {pending, done, missed}`. A background pass flips `pending` rows
-whose deadline passed to `missed`.
+`status ∈ {pending, done, missed, skipped}`. A background pass flips `pending`
+rows whose deadline passed to `missed`; a user-skipped occurrence becomes
+`skipped` — it is hidden from today's list, never turns into `missed` and
+does not count against the completion percent.
 
 ### Reminder tick
 
@@ -216,7 +218,7 @@ sequenceDiagram
 
     Sch->>Core: mark_overdue(now): pending past due → missed
     loop per user (in user tz)
-        Core->>Core: reminders_on? materialize horizon,<br/>trigger moment reached (times/interval)? quiet hours?
+        Core->>Core: reminders_on? materialize horizon,<br/>trigger reached (times/interval<br/>or any occurrence reminder_at)? quiet hours?
         alt no trigger / quiet / reminders off
             Core-->>Sch: silent
         end
@@ -238,10 +240,14 @@ sequenceDiagram
             end
         end
         Core->>Msg: digest text + per-task buttons
-        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭]<br/>2. Созвон — до 12:00 ⚠️просрочено [✅][⏭]
+        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭][⏭skip]<br/>2. Созвон — до 12:00 ⚠️просрочено [✅][⏭][⏭skip]
     end
     U->>Msg: "done:42" button (any linked chat)
     Msg->>Core: ownership check → status=done + completions row
+    U->>Msg: "snooze:42" → duration buttons [15м][1ч][4ч][+сутки]
+    U->>Msg: "snz:42:60" → reminder_at = now + 60 min
+    U->>Msg: "skip:42" → status=skipped: hidden today,<br/>never flipped to missed, no penalty in stats
+    Msg->>U: after any completed command:<br/>"Хотите сделать что-нибудь ещё?" + command menu
 ```
 <!-- mermaid:end reminder-flow -->
 
