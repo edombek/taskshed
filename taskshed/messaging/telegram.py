@@ -17,6 +17,17 @@ log = logging.getLogger(__name__)
 MT_PROXY_TYPES = ("mtproxy", "securedmtproxy")
 
 
+def inline_rows(buttons: ButtonRows) -> list[list]:
+    """Convert port ButtonRows to Telethon inline keyboard buttons.
+
+    Telethon's inline buttons are ``Button.inline(text, data=bytes)`` —
+    ``Button(label, callback=…)`` does not exist and this drift broke the
+    live bot once, hence the unit test in tests/test_telegram_adapter.py.
+    """
+    return [[Button.inline(label, data=cb.encode("utf-8")) for label, cb in row]
+            for row in buttons]
+
+
 class TelegramAdapter:
     platform = "telegram"
 
@@ -66,11 +77,9 @@ class TelegramAdapter:
         await self.client.send_message(int(account.platform_user_id), text)
 
     async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
-        rows = [[Button(label, callback=cb.encode("utf-8")) for label, cb in row]
-                for row in buttons]
         await self.client.send_message(
             int(account.platform_user_id), text,
-            buttons=rows, parse_mode=None, link_preview=False,
+            buttons=inline_rows(buttons), parse_mode=None, link_preview=False,
         )
 
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:
