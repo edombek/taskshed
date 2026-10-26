@@ -9,6 +9,11 @@ from zoneinfo import ZoneInfo
 from .models import Task, TaskOccurrence
 
 
+def _status_of(occ: TaskOccurrence) -> str:
+    """Map the five statuses onto the four the charts draw."""
+    return "pending" if occ.status in ("pending", "in_progress") else occ.status
+
+
 def per_task(occs: list[tuple[TaskOccurrence, Task]]) -> list[dict]:
     agg: dict[int, dict] = defaultdict(
         lambda: {"title": "", "place_id": 0, "done": 0, "missed": 0, "skipped": 0,
@@ -34,8 +39,14 @@ def per_day(occs: list[tuple[TaskOccurrence, Task]], tz: str) -> dict[date, dict
     days: dict[date, dict] = defaultdict(lambda: {"done": 0, "missed": 0,
                                                   "skipped": 0, "pending": 0})
     for occ, _ in occs:
-        d = occ.due_at.astimezone(tzinfo).date()
-        days[d][occ.status] = days[d].get(occ.status, 0) + 1
+        status = _status_of(occ)
+        # work stretched over days marks the day it starts as well as the day
+        # it has to be ready
+        marked = {occ.due_at.astimezone(tzinfo).date()}
+        if occ.start_at is not None:
+            marked.add(occ.start_at.astimezone(tzinfo).date())
+        for d in marked:
+            days[d][status] += 1
     return dict(days)
 
 
@@ -75,6 +86,32 @@ def occurrence_moment(occ: TaskOccurrence) -> datetime:
     return occ.start_at or occ.reminder_at or occ.due_at
 
 
+# a work window longer than this is drawn only by its boundaries, so a task
+# with a deadline a week ahead does not paint a whole week of the grid
+HOUR_BLOCK_HOURS = 24
+
+
+def occurrence_hours(occ: TaskOccurrence) -> list[datetime]:
+    """Hours an occurrence occupies: one moment, or the whole work window.
+
+    A task stretched over time («с 10:00 до 14:00») keeps every hour between
+    its start and its ready-by moment busy, which is how the owner reads the
+    hour grid; very long windows only mark their boundaries.
+    """
+    start = occurrence_moment(occ)
+    if occ.start_at is None or occ.due_at <= start:
+        return [start]
+    if occ.due_at - start > timedelta(hours=HOUR_BLOCK_HOURS):
+        return [start, occ.due_at]
+    first = start.replace(minute=0, second=0, microsecond=0)
+    stamps = []
+    cur = first
+    while cur <= occ.due_at:
+        stamps.append(cur)
+        cur += timedelta(hours=1)
+    return stamps
+
+
 def activity_by_hour(occs: list[tuple[TaskOccurrence, Task]],
                      tz: str) -> dict[tuple[date, int], dict]:
     """(user-local date, hour of day) -> status counts.
@@ -87,8 +124,8 @@ def activity_by_hour(occs: list[tuple[TaskOccurrence, Task]],
         lambda: {"done": 0, "missed": 0, "skipped": 0, "pending": 0}
     )
     for occ, _ in occs:
-        local = occurrence_moment(occ).astimezone(tzinfo)
-        cell = hours[(local.date(), local.hour)]
-        status = "pending" if occ.status in ("pending", "in_progress") else occ.status
-        cell[status] += 1
+        cell_status = _status_of(occ)
+        for stamp in occurrence_hours(occ):
+            local = stamp.astimezone(tzinfo)
+            hours[(local.date(), local.hour)][cell_status] += 1
     return dict(hours)

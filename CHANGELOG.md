@@ -72,6 +72,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and its value are shown in Russian on the settings screen («Режим:
   по временам (09:00 13:00)»), and the prompts explain what the values
   mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
+- **Task saved = task shown**: after the wizard the bot answers with a card of
+  what was created — title, place, the work window («с 26.10 10:00 до 26.10 23:59»)
+  or the repeat rule, the reminder moment and the first date it will fire on.
+- **Hour grid marks work windows**: a task stretched over time keeps every hour
+  between its start and its ready-by moment busy in the hourly map (a window
+  longer than a day marks its boundaries instead of painting a whole row), and
+  the daily map now also marks the day the work starts, not only its deadline.
+- **Charts are drawn sharp**: resolution comes out at up to 300 dpi, sized to
+  Telegram's photo pixel budget (a 5-week map used to be a 543 px stamp).
 - **Activity charts, further ahead and finer grained**: the daily heatmap draws
   the whole window up to a per-user horizon — the days ahead stay on the picture
   even while nothing is planned in them, and today's cell is outlined as the

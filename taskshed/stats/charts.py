@@ -24,6 +24,18 @@ HEAT_MISSED = "#f85149"
 HEAT_PENDING = "#58a6ff"
 HEAT_SKIPPED = "#e3b341"
 
+# print/phone resolution: the maps get zoomed on screen, so they are rendered
+# far above the old 110 dpi, but kept inside Telegram's photo pixel budget
+DPI = 300
+PIXEL_BUDGET = 2_400_000
+
+
+def _dpi_for(width_in: float, height_in: float) -> int:
+    """Dpi that fills the picture with pixels without exceeding the budget."""
+    import math
+
+    return max(110, min(DPI, int(math.sqrt(PIXEL_BUDGET / (width_in * height_in)))))
+
 
 def _legend(lang: str):
     return (t("w_done", lang), t("w_missed", lang), t("w_pending", lang),
@@ -46,7 +58,7 @@ def daily_bar(days: dict[date, dict], lang: str, out_path: str) -> str:
     ax.set_title(t("chart_daily", lang))
     ax.legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=110)
+    fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()))
     plt.close(fig)
     return out_path
 
@@ -75,7 +87,7 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
         return ""
     n_days = len(days)
 
-    fig, ax = plt.subplots(figsize=(0.36 * 24 + 3.0, 0.46 * n_days + 1.3))
+    fig, ax = plt.subplots(figsize=(0.36 * 24 + 3.0, 0.36 * n_days + 1.0))
     fig.patch.set_facecolor(HEAT_BG)
     ax.set_facecolor(HEAT_BG)
     for row, d in enumerate(days):
@@ -126,7 +138,8 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
                     frameon=False, bbox_to_anchor=(0.5, -0.02))
     for txt in leg.get_texts():
         txt.set_color(HEAT_TEXT)
-    fig.savefig(out_path, dpi=110, facecolor=HEAT_BG, bbox_inches="tight")
+    fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()),
+              facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -142,7 +155,7 @@ def top_tasks(task_rows: list[dict], lang: str, out_path: str, limit: int = 10) 
     for i, p in enumerate(percents):
         ax.text(p + 1, i, f"{p}%", va="center", fontsize=8)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=110)
+    fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()))
     plt.close(fig)
     return out_path
 
@@ -158,7 +171,7 @@ def trend_line(points: list[tuple[date, int, int]], lang: str, out_path: str) ->
     ax.set_title(t("chart_trend", lang))
     fig.autofmt_xdate()
     fig.tight_layout()
-    fig.savefig(out_path, dpi=110)
+    fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()))
     plt.close(fig)
     return out_path
 
@@ -208,7 +221,8 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         return ""
     first_monday, n_weeks = _heatmap_window(days, end, min_weeks, max_weeks)
 
-    fig, ax = plt.subplots(figsize=(0.26 * n_weeks + 2.6, 2.6))
+    # 0.30 in per cell in both directions, so squares stay square
+    fig, ax = plt.subplots(figsize=(0.30 * n_weeks + 2.6, 0.30 * 8.2 + 0.7))
     fig.patch.set_facecolor(HEAT_BG)
     ax.set_facecolor(HEAT_BG)
     d = first_monday
@@ -277,6 +291,7 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                     frameon=False, bbox_to_anchor=(0.5, -0.02))
     for txt in leg.get_texts():
         txt.set_color(HEAT_TEXT)
-    fig.savefig(out_path, dpi=110, facecolor=HEAT_BG, bbox_inches="tight")
+    fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()),
+              facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
     return out_path

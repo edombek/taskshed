@@ -111,6 +111,11 @@ Checklist of the implementation roadmap. EN summary in
       empty, today is outlined; the hour-level map (week period: day rows ×
       24 hour columns) counts the same statuses as the daily one, bucketed by
       the hour the work belongs to (start_at, else reminder time)
+- [x] Saving a task answers with a card: title, place, the window or repeat
+      rule, the reminder time and the first date it fires
+- [x] Hour map marks every hour inside a stretched task's window (only the
+      boundaries for windows over a day); daily map marks the start day too
+- [x] Chart PNGs rendered at up to 300 dpi inside Telegram's photo budget
 - [x] Stale keyboards disarmed: only the newest screen in a chat keeps its
       inline buttons (`edit_buttons(..., [])` port convention)
 

@@ -44,7 +44,7 @@
   "wizard_ask_month_day": "Which day of the month? (1–31)",
   "wizard_ask_when": "When should it start? (e.g. 15.11.2026 14:30 or 15.11 14.30)",
   "wizard_ask_reminder": "Remind at what time? (HH:MM, or tap a button)",
-  "wizard_saved": "Task “{title}” added to “{place}”.",
+  "wizard_saved": "Task “{title}” added to “{place}”",
   "wizard_cancelled": "Cancelled.",
   "wizard_no_selection": "Pick at least one day.",
   "wizard_bad_input": "Didn't get that. {hint}",
@@ -152,5 +152,12 @@
   "btn_unlink": "🗑 Unlink {platform}",
   "rem_ask_horizon": "How many days ahead should the activity chart reach? (1–90, e.g. 7)",
   "btn_fmt_hours": "⏱ Hourly chart",
-  "stats_hours_caption": "Hourly activity: each row is a day, each column an hour; brighter square = more finished in that hour; red = missed, blue = still open, orange = skipped"
+  "stats_hours_caption": "Hourly activity: each row is a day, each column an hour; brighter square = more finished in that hour; red = missed, blue = still open, orange = skipped",
+  "save_when_once": "🗓 due {due}",
+  "save_when_range": "🗓 from {start} until {due}",
+  "save_when_every": "🗓 every {n} days, from {anchor}",
+  "save_when_weekdays": "🗓 on: {days}",
+  "save_when_monthly": "🗓 day {day} of the month",
+  "save_reminder": "🔔 reminder at {time}",
+  "save_next": "👉 first up: {when}"
 }

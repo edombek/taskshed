@@ -128,6 +128,36 @@ class TestCharts:
         last_monday = first + timedelta(weeks=n - 1)
         assert last_monday + timedelta(days=6) >= d0 + timedelta(days=7)
 
+    def test_activity_by_hour_spans_a_work_window(self):
+        from taskshed.core.stats import activity_by_hour
+
+        def window(start, due, status="pending"):
+            occ = TaskOccurrence(id=1, task_id=1, due_at=due, reminder_at=start,
+                                 start_at=start, status=OccurrenceStatus(status))
+            return occ, Task(id=1, user_id=1, place_id=1, title="T")
+
+        # «с 10:00 до 14:00» keeps the hours 10…14 busy, not just 10:00
+        occs = [window(datetime(2026, 10, 26, 10, 0, tzinfo=UTC),
+                       datetime(2026, 10, 26, 14, 0, tzinfo=UTC))]
+        grid = activity_by_hour(occs, "UTC")
+        assert [h for (_, h), v in grid.items() if v["pending"]] == [10, 11, 12, 13, 14]
+        # a window longer than a day marks its boundaries, not every hour
+        occs = [window(datetime(2026, 10, 26, 9, 0, tzinfo=UTC),
+                       datetime(2026, 11, 2, 18, 0, tzinfo=UTC))]
+        grid = activity_by_hour(occs, "UTC")
+        assert sorted(k for k, v in grid.items() if v["pending"]) == [
+            (date(2026, 10, 26), 9), (date(2026, 11, 2), 18)]
+
+    def test_per_day_marks_the_day_work_starts(self):
+        occ = TaskOccurrence(id=1, task_id=1,
+                             due_at=datetime(2026, 10, 27, 18, 0, tzinfo=UTC),
+                             reminder_at=datetime(2026, 10, 26, 9, 0, tzinfo=UTC),
+                             start_at=datetime(2026, 10, 26, 9, 0, tzinfo=UTC),
+                             status=OccurrenceStatus.IN_PROGRESS)
+        days = per_day([(occ, Task(id=1, user_id=1, place_id=1, title="T"))], "UTC")
+        assert days[date(2026, 10, 26)]["pending"] == 1
+        assert days[date(2026, 10, 27)]["pending"] == 1
+
     def test_hourly_heatmap(self, tmp_path):
         grid = {(date(2026, 10, 26), h): {"done": h % 5, "missed": h % 3,
                                           "skipped": 1 if h == 4 else 0,

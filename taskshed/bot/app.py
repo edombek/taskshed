@@ -497,8 +497,8 @@ class BotApp:
                 tzinfo = ZoneInfo(ctx.settings.tz)
                 first = start.astimezone(tzinfo).date()
                 last = end.astimezone(tzinfo).date()
-                if (last - first).days > 40:  # keep the picture readable
-                    first = last - timedelta(days=40)
+                if (last - first).days > 24:  # more rows than this stops being
+                    first = last - timedelta(days=24)  # an hour-level picture
                 path = os.path.join(tmp, "hours.png")
                 if not charts.hourly_heatmap(
                         grid, ctx.lang, path, (first, last),
@@ -731,8 +731,51 @@ class BotApp:
         )
         place = await self.store.get_place(ctx.user.id, d["place_id"])
         self.wizards.pop(ctx.user.id, None)
-        await ctx.reply(t("wizard_saved", ctx.lang, title=task.title,
-                          place=place.name if place else "?"))
+        await ctx.reply(await self._saved_card(ctx, task, place))
+
+    async def _saved_card(self, ctx: Ctx, task, place) -> str:
+        """What was just created: title, place, the when, the reminder moment."""
+        from taskshed.core.stats import occurrence_moment
+
+        tz, fmt = ctx.tz, "%d.%m %H:%M"
+        if task.schedule_type == "once":
+            due = task.deadline.astimezone(tz)
+            if task.start_at is not None:
+                when = t("save_when_range", ctx.lang,
+                         start=task.start_at.astimezone(tz).strftime(fmt),
+                         due=due.strftime(fmt))
+            else:
+                when = t("save_when_once", ctx.lang, due=due.strftime(fmt))
+        elif task.schedule_type == "every_n_days":
+            anchor = str(task.schedule_data.get("anchor", ""))
+            try:
+                anchor = date.fromisoformat(anchor).strftime("%d.%m")
+            except ValueError:
+                pass
+            when = t("save_when_every", ctx.lang, n=task.schedule_data["n"],
+                     anchor=anchor)
+        elif task.schedule_type == "weekdays":
+            when = t("save_when_weekdays", ctx.lang,
+                     days=", ".join(t(WD_KEYS[i], ctx.lang)
+                                    for i in sorted(task.schedule_data["weekdays"])))
+        else:
+            when = t("save_when_monthly", ctx.lang, day=task.schedule_data["day"])
+        lines = [t("wizard_saved", ctx.lang, title=task.title,
+                   place=place.name if place else "?"), when,
+                 t("save_reminder", ctx.lang,
+                   time=task.reminder_time.strftime("%H:%M"))]
+        # the first date it will actually appear on — the useful part of a rule
+        horizon = max(self.cfg.occurrence_horizon_days,
+                      ctx.settings.stats_horizon_days)
+        soon = await self.store.occurrences_in_range(
+            ctx.user.id, datetime.now(UTC),
+            datetime.now(UTC) + timedelta(days=horizon))
+        moments = [occurrence_moment(o).astimezone(tz)
+                   for o, tk in soon if tk.id == task.id]
+        if moments:
+            lines.append(t("save_next", ctx.lang,
+                           when=min(moments).strftime(fmt)))
+        return "\n".join(lines)
 
     # ---------- callbacks ----------
 

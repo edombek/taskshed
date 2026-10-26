@@ -852,6 +852,48 @@ class TestStaleKeyboardCleanup:
         assert screen.buttons            # ...and still clickable
 
 
+class TestSavedCard:
+    """Saving a task answers with what was created: window + reminder + next."""
+
+    async def test_stretched_task_card_shows_window_and_reminder(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, "/задача")
+        await send(env, "собрать полку")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:once")
+        await send(env, cb="dt:1")        # start: tomorrow
+        f = await send(env, cb="tm:10:00")
+        assert "dtl:eod" in [cb for row in f.last_buttons() for _, cb in row]
+        await send(env, cb="dtl:eod")     # ready by the end of that day
+        f = await send(env, cb="tm:10:00")
+        text = f.texts()[0]
+        tomorrow = datetime.now(UTC) + timedelta(days=1)
+        assert "добавлена" in text
+        assert f"{tomorrow:%d.%m} 10:00" in text   # начало
+        assert f"{tomorrow:%d.%m} 23:59" in text   # конец
+        assert "напоминание в 10:00" in text
+        assert "ближайшее срабатывание" in text
+
+    async def test_recurring_card_shows_rule_and_first_date(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, "/задача")
+        await send(env, "полить")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:every_n_days")
+        await send(env, "3")
+        await send(env, cb="dt:0")
+        f = await send(env, cb="tm:09:00")
+        text = f.texts()[0]
+        assert "каждые 3 дн." in text and "напоминание в 09:00" in text
+        assert re.search(r"ближайшее срабатывание: \d{2}\.\d{2} 09:00", text)
+
+
 class TestWorkInProgress:
     """One-off tasks have a work window and a «▶ В работе» button."""
 
