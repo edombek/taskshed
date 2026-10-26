@@ -65,7 +65,7 @@ class TestOnboarding:
 
     async def test_language_switch(self, env):
         f = await send(env, "/lang")
-        assert prev_buttons(f)[0][1][1] == "lang:en"
+        assert f.last_buttons()[0][1][1] == "lang:en"
         f = await send(env, cb="lang:en")
         assert f.texts()[0] == "Language: English"
         _, store, _ = env
@@ -445,7 +445,7 @@ class TestInteractiveStats:
         await self._seed(env)
         f = await send(env, "/статистика")
         flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert flat == ["per:week", "per:month", "per:year", "per:all"]
+        assert flat == ["per:week", "per:month", "per:year", "per:all", "menu:back"]
         assert len(f.sent) == 1  # picker replaces the text, no double reply
 
     async def test_period_button_shows_text_with_format_buttons(self, env):
@@ -484,5 +484,67 @@ class TestFollowUpSuppressed:
     async def test_reminders_status_exposes_location_frequency_button(self, env):
         await send(env, "Дом")
         f = await send(env, "/напоминания")
-        labels = [label for row in prev_buttons(f) for label, _ in row]
+        labels = [label for row in f.last_buttons() for label, _ in row]
         assert any("спрашивать о месте" in label for label in labels)
+
+
+class TestSubmenuBack:
+    async def test_reminders_status_is_a_menu_with_back(self, env):
+        await send(env, "Дом")
+        f = await send(env, "/напоминания")
+        assert len(f.sent) == 1  # no "anything else?" under a submenu screen
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "menu:back" in flat
+        f = await send(env, cb="menu:back")
+        assert len(f.sent) == 1  # the main menu answer does not repeat itself
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat and "menu:back" not in flat
+
+    async def test_back_cancels_pending_addplace(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await send(env, "/места")
+        f = await send(env, cb="menu:back")
+        assert "cmd:tasks" in [cb for row in f.last_buttons() for _, cb in row]
+        assert not app.wizards  # the addplace wizard was dropped
+        await send(env, "Какая-то фраза")
+        user = await store.get_user_by_account("telegram", PID)
+        assert "Какая-то" not in [p.name for p in await store.list_places(user.id)]
+
+
+class TestTimeInputFormats:
+    @pytest.mark.parametrize(("typed", "want"), [
+        ("11:55", time(11, 55)),
+        ("11 55", time(11, 55)),
+        ("11.55", time(11, 55)),
+        ("11-55", time(11, 55)),
+        ("9.5", time(9, 5)),
+    ])
+    def test_flexible_separators(self, typed, want):
+        from taskshed.bot.app import _parse_hhmm
+        assert _parse_hhmm(typed) == want
+
+    @pytest.mark.parametrize("typed", ["1155", "11:55:55", "25:00", "11:75", ""])
+    def test_rejects_garbage(self, typed):
+        from taskshed.bot.app import _parse_hhmm
+        assert _parse_hhmm(typed) is None
+
+
+class TestWizardReminderButtons:
+    async def test_reminder_time_via_buttons(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, "/задача")
+        await send(env, "полить")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:every_n_days")
+        await send(env, "3")
+        f = await send(env, cb="dt:0")  # anchor today
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "tm:09:00" in flat  # the default gets a button, not an Enter
+        await send(env, cb="tm:12:30")
+        assert fake.find("добавлена")
+        tasks = await store.list_tasks(user.id)
+        assert tasks and tasks[0].reminder_time == time(12, 30)

@@ -85,6 +85,10 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Diagrams embedded in docs/READMEs as GitHub-native ```mermaid blocks
       (vector), synced from `.mmd` via `scripts/sync_diagram_blocks.py` +
       parity test; PNGs re-rendered at 3x and linked for offline readers
+- [x] Submenu screens (reminder settings, places, language, stats pickers)
+      get an ⬅️ Назад button back to the main menu, no menu follow-up there
+- [x] Wizard reminder time as buttons (⏎ 09:00 default); flexible time
+      parsing: `11 55` / `11.55` / `11-55` / `11:55`
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

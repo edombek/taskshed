@@ -42,7 +42,7 @@ PERIODS = {"неделя": ("week", 7), "week": ("week", 7),
 WD_KEYS = ["wd_mo", "wd_tu", "wd_we", "wd_th", "wd_fr", "wd_sa", "wd_su"]
 # snooze durations offered as buttons: 15m/1h/4h/24h
 
-_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+_TIME_RE = re.compile(r"^(\d{1,2})\s*[:.,\-\s]\s*(\d{1,2})$")
 _DT_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$")
 
 # URLs are defanged in user-supplied strings (task titles, place names):
@@ -228,6 +228,8 @@ class BotApp:
         places = await self.store.list_places(ctx.user.id)
         if places:
             rows = [[(f"🗑 {p.name}", f"pdel:{p.id}")] for p in places]
+            rows.append([(t("btn_back", ctx.lang), "menu:back")])
+            ctx.suppress_menu = True  # list with delete buttons: menu follows on request
             await ctx.reply(
                 t("places_list", ctx.lang, names=", ".join(p.name for p in places))
                 + "\n" + t("no_places", ctx.lang),
@@ -262,6 +264,7 @@ class BotApp:
                  (t("btn_per_month", ctx.lang), "per:month")],
                 [(t("btn_per_year", ctx.lang), "per:year"),
                  (t("btn_per_all", ctx.lang), "per:all")],
+                [(t("btn_back", ctx.lang), "menu:back")],
             ])
             return
         await self._stats_show(ctx, period, fmt)
@@ -288,6 +291,7 @@ class BotApp:
             [(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")],
             [(t("btn_fmt_csv", ctx.lang), f"fmt:csv:{name}"),
              (t("btn_fmt_xlsx", ctx.lang), f"fmt:xlsx:{name}")],
+            [(t("btn_back", ctx.lang), "menu:back")],
         ])
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
@@ -319,8 +323,10 @@ class BotApp:
         if lang:
             await self._set_lang(ctx, lang)
             return
+        ctx.suppress_menu = True
         await ctx.reply(t("lang_menu", ctx.lang),
-                        [[("Русский", "lang:ru"), ("English", "lang:en")]])
+                        [[("Русский", "lang:ru"), ("English", "lang:en")],
+                         [(t("btn_back", ctx.lang), "menu:back")]])
 
     async def _set_lang(self, ctx: Ctx, lang: str) -> None:
         await self.store.set_language(ctx.user.id, lang)
@@ -460,7 +466,13 @@ class BotApp:
 
     async def _wizard_ask_reminder(self, ctx: Ctx, w: dict) -> None:
         w["step"] = "reminder"
-        await ctx.reply(t("wizard_ask_reminder", ctx.lang))
+        # Telegram cannot send an empty message, so the 09:00 default gets a
+        # button instead of the impossible "press Enter" hint
+        await ctx.reply(t("wizard_ask_reminder", ctx.lang), [
+            [("⏎ 09:00", "tm:09:00")],
+            [("08:00", "tm:08:00"), ("12:00", "tm:12:00")],
+            [("18:00", "tm:18:00"), ("21:00", "tm:21:00")],
+        ])
 
     async def _wizard_finish(self, ctx: Ctx, w: dict, rt: time) -> None:
         d = w["data"]
@@ -532,6 +544,13 @@ class BotApp:
             await self._cb_date(ctx, int(arg))
         elif action == "tm":
             await self._cb_time(ctx, arg)
+        elif action == "menu" and arg == "back":
+            # submenu screens offer ⬅️ Назад: return to the main command menu
+            if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
+                self.wizards.pop(ctx.user.id, None)
+            ctx.suppress_menu = True
+            await ctx.reply(t("menu_ask_more", ctx.lang),
+                            self._menu_rows(ctx.lang))
 
     async def _cb_date(self, ctx: Ctx, offset: int) -> None:
         """Date picked via buttons (today/tomorrow/…) in the task wizard."""
@@ -551,9 +570,14 @@ class BotApp:
         ])
 
     async def _cb_time(self, ctx: Ctx, arg: str) -> None:
-        """Time picked via buttons after a date, completes the deadline."""
+        """Time picked via buttons (deadline step or reminder-time step)."""
         w = self.wizards.get(ctx.user.id)
-        if not w or w.get("step") != "whentime":
+        if not w or w.get("step") not in ("whentime", "reminder"):
+            return
+        if w["step"] == "reminder":
+            rt = _parse_hhmm(arg)
+            if rt is not None:
+                await self._wizard_finish(ctx, w, rt)
             return
         await self._set_deadline(ctx, w, w["data"]["picked_date"], _parse_hhmm(arg))
 
@@ -745,6 +769,7 @@ class BotApp:
                    else f"{st.remind_interval_min} min",
                    quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
                    ttl=st.location_ttl_hours, tz=st.tz)
+        ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
         await ctx.reply(status, [
             [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
             [(t("btn_rem_times", ctx.lang), "rem:times"),
@@ -752,6 +777,7 @@ class BotApp:
             [(t("btn_rem_quiet", ctx.lang), "rem:quiet"),
              (t("btn_rem_ttl", ctx.lang), "rem:ttl")],
             [(t("btn_rem_tz", ctx.lang), "rem:tz")],
+            [(t("btn_back", ctx.lang), "menu:back")],
         ])
 
     async def _cb_rem(self, ctx: Ctx, arg: str) -> None:

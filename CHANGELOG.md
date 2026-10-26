@@ -49,4 +49,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   setting has an explicit label; docs/READMEs embed diagrams as GitHub-native
   ```mermaid blocks (vector) synced from the `.mmd` sources by
   `scripts/sync_diagram_blocks.py` (parity test in `tests/test_docs_diagrams.py`),
-  3x PNGs kept as links for offline readers.
+  3x PNGs kept as links for offline readers; submenu screens (reminder
+  settings, places, language, stats pickers) carry an ⬅️ Назад button that
+  returns to the main menu instead of the "anything else?" follow-up; the
+  wizard's reminder time is picked via buttons (the "press Enter for the
+  default" was impossible in Telegram); time input accepts `11 55`, `11.55`
+  and `11-55` as well as `11:55`.
