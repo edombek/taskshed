@@ -32,7 +32,7 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
 
 - Hexagonal architecture: platform-independent `core` (domain, scheduling,
   stats) behind a messenger port; adapters: Telegram via **Telethon**
-  (`start_bot`, MTProto/MTProxy support), VK via Bot Long Poll.
+  (`start(bot_token=…)`, MTProto/MTProxy support), VK via Bot Long Poll.
 - Location is set **manually** by the user (buttons), never via GPS.
 - Multi-user from day one. `users` (human, platform-agnostic) and `accounts`
   (platform + chat id, `UNIQUE(platform, platform_user_id)`) are separate
@@ -81,7 +81,8 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
   docstring). SQLite itself stores naive.
 - In-memory SQLite tests must build the engine via `storage/db.py::make_engine`
   — it applies `StaticPool`, without it every connection gets its own empty DB.
-- Telegram uses **Telethon in bot mode** (`start_bot`), not python-telegram-bot;
+- Telegram uses **Telethon in bot mode** (`start(bot_token=…)`; Telethon 1.45
+  removed `client.start_bot()`), not python-telegram-bot;
   MTProxy needs `ConnectionTcpMTProxyRandomizedIntermediate`.
 - Alembic: autogenerate/upgrade take the URL from `TASKSHED_DATABASE_URL`
   (env), not only `alembic.ini`. `alembic/versions/*` is exempted from ruff

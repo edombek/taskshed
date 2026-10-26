@@ -15,6 +15,10 @@ config.yaml
 *.db
 *.sqlite3
 
+# Telethon session files (bot auth keys)
+*.session
+*.session-journal
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/

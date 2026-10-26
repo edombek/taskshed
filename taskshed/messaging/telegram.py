@@ -84,7 +84,8 @@ class TelegramAdapter:
     # ---------- lifecycle ----------
 
     async def start(self) -> None:
-        await self.client.start_bot(self.cfg.bot_token)
+        # Telethon >= 1.45 dropped client.start_bot(); bot login is start(bot_token=...)
+        await self.client.start(bot_token=self.cfg.bot_token)
         log.info("telegram bot started (proxy=%s)", self.cfg.proxy.type or "none")
 
     async def run_forever(self) -> None:

@@ -20,7 +20,7 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Unit tests for scheduling & repositories (in-memory SQLite)
 
 ## Stage 2 — Telegram adapter + i18n ✅
-- [x] Telethon `start_bot`, MTProto proxy support
+- [x] Telethon bot login (`start(bot_token=…)`), MTProto proxy support
 - [x] Messenger port implemented; commands/buttons mapped to platform API
 - [x] i18n: ru/en JSON catalogs, `t()`, per-user language, `/lang`
 - [x] CI test: ru/en catalog key parity
