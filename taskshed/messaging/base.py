@@ -39,7 +39,11 @@ class IMessenger(Protocol):
 
     async def edit_buttons(self, account: Account, message_id: str, text: str,
                            buttons: ButtonRows) -> bool:
-        """Update an interactive message in place; False when unsupported."""
+        """Update an interactive message in place; False when unsupported.
+
+        An empty `buttons` list strips the keyboard: only the newest screen
+        of a conversation should stay clickable.
+        """
         ...
 
 

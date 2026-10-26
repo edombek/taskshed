@@ -132,9 +132,12 @@ class Ctx:
         self.suppress_menu = False # answer already has interactive buttons (menu would clutter)
 
     async def reply(self, text: str, buttons: ButtonRows | None = None) -> None:
+        # every previous keyboard in this chat becomes stale right here
+        await self.app._strip_keyboards(self.messenger, self.account, self.user.id)
         self.replied = True
         if buttons:
-            await self.messenger.send_buttons(self.account, text, buttons)
+            mid = await self.messenger.send_buttons(self.account, text, buttons)
+            self.app._track_kb(self.user.id, self.account, mid, text)
         else:
             await self.messenger.send_text(self.account, text)
 
@@ -159,6 +162,33 @@ class BotApp:
         # last reminder-settings message per (user, account): value changes
         # edit it in place instead of stacking new copies in the chat
         self._rem_msgs: dict[tuple[int, int], str] = {}
+        # live keyboards per (user, account): {message_id: text}. A newer
+        # answer strips these, so stale buttons cannot be tapped twice
+        self._kb_msgs: dict[tuple[int, int], dict[str, str]] = {}
+
+    def _track_kb(self, user_id: int, account: Account, mid: str | None,
+                  text: str) -> None:
+        """Remember an interactive message so its keyboard can be stripped."""
+        if mid:
+            self._kb_msgs.setdefault((user_id, account.id), {})[mid] = text
+
+    async def _strip_keyboards(self, messenger: IMessenger, account: Account,
+                               user_id: int, keep: str = "") -> None:
+        """Disarm every keyboard that is no longer the newest screen.
+
+        `keep` is the id a handler is about to re-render in place: it stays
+        armed (the edit that follows replaces its buttons anyway).
+        """
+        live = self._kb_msgs.pop((user_id, account.id), {})
+        for mid, text in live.items():
+            if mid == keep:
+                continue
+            try:
+                await messenger.edit_buttons(account, mid, text, [])
+            except Exception:  # deleted/aged-out message: nothing to disarm
+                log.debug("keyboard strip failed for message %s", mid)
+        if keep and keep in live:
+            self._kb_msgs[(user_id, account.id)] = {keep: live[keep]}
 
     # ---------- entry ----------
 
@@ -192,9 +222,13 @@ class BotApp:
         if (ctx.replied and not ctx.suppress_menu
                 and not self.wizards.get(user.id)):
             try:
-                await messenger.send_buttons(
+                mid = await messenger.send_buttons(
                     account, t("menu_ask_more", user.language),
                     self._menu_rows(user.language))
+                # the follow-up menu joins the live screens: the *next*
+                # answer disarms it together with the command's own buttons
+                self._track_kb(user.id, account, mid,
+                               t("menu_ask_more", user.language))
             except Exception:
                 log.exception("menu follow-up failed for %s", user.id)
 
@@ -761,13 +795,17 @@ class BotApp:
                 [(t("wd_done", ctx.lang), "wdsubmit")]] + self._back_row(ctx, w)
         text = t("wizard_ask_days", ctx.lang)
         mid = w.get("wd_msg")
+        await self._strip_keyboards(ctx.messenger, ctx.account, ctx.user.id,
+                                    keep=mid or "")
         if mid and await ctx.messenger.edit_buttons(ctx.account, mid, text, rows):
+            self._track_kb(ctx.user.id, ctx.account, mid, text)
             ctx.replied = True
             return
         new_id = await ctx.messenger.send_buttons(ctx.account, text, rows)
         ctx.replied = True
         if new_id:
             w["wd_msg"] = new_id
+            self._track_kb(ctx.user.id, ctx.account, new_id, text)
 
     async def _cb_done(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
@@ -872,8 +910,10 @@ class BotApp:
         for acc in accounts:
             messenger = self.messengers.get(acc.platform)
             if messenger:
+                await self._strip_keyboards(messenger, acc, user_id)
                 if buttons:
-                    await messenger.send_buttons(acc, text, buttons)
+                    mid = await messenger.send_buttons(acc, text, buttons)
+                    self._track_kb(user_id, acc, mid, text)
                 else:
                     await messenger.send_text(acc, text)
 
@@ -886,7 +926,9 @@ class BotApp:
                     continue
             messenger = self.messengers.get(acc.platform)
             if messenger:
-                await messenger.send_buttons(acc, text, buttons)
+                await self._strip_keyboards(messenger, acc, user_id)
+                mid = await messenger.send_buttons(acc, text, buttons)
+                self._track_kb(user_id, acc, mid, text)
 
     # ---------- reminder settings ----------
 
@@ -908,13 +950,18 @@ class BotApp:
         ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
         key = (ctx.user.id, ctx.account.id)
         mid = self._rem_msgs.get(key)
+        # other keyboards of this chat go stale; this one is re-rendered below
+        await self._strip_keyboards(ctx.messenger, ctx.account, ctx.user.id,
+                                    keep=mid or "")
         if mid and await ctx.messenger.edit_buttons(ctx.account, mid, status, rows):
+            self._track_kb(ctx.user.id, ctx.account, mid, status)
             ctx.replied = True
             return
         new_id = await ctx.messenger.send_buttons(ctx.account, status, rows)
         ctx.replied = True
         if new_id:
             self._rem_msgs[key] = new_id
+            self._track_kb(ctx.user.id, ctx.account, new_id, status)
 
     def _rem_mode_label(self, st, lang: str) -> str:
         if st.remind_mode == "times":

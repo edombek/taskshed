@@ -72,3 +72,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and its value are shown in Russian on the settings screen («Режим:
   по временам (09:00 13:00)»), and the prompts explain what the values
   mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
+- **Stale keyboards are disarmed**: as soon as a newer answer arrives, every
+  older inline keyboard in that chat is edited down to plain text, so only
+  the current screen keeps buttons. Port-level convention:
+  `IMessenger.edit_buttons(account, id, text, [])` strips the keyboard —
+  Telegram sends `ReplyKeyboardHide` (an empty `ReplyInlineMarkup` is
+  rejected by the API; verified live), VK cannot edit and skips it.

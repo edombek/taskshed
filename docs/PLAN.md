@@ -102,6 +102,14 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Reminder timing merged into one flow: «⏰ Когда напоминать» →
       times/every-N-minutes picker; localized mode line on the settings
       screen; ⬅️ Назад in the picker returns to settings (in place)
+- [ ] Task lists/digests: «▶ В работе» status for tasks stretched over time
+      (start + ready-by deadline), instead of one-off tasks being a moment
+- [ ] ⚙️ «Настройки» instead of 🔔 «Напоминания»: one per-user settings screen
+      incl. linked platforms status and chart horizon
+- [ ] Activity chart shows planned tasks N days ahead (setting, default 1
+      week) and an hour-level view for short periods
+- [x] Stale keyboards disarmed: only the newest screen in a chat keeps its
+      inline buttons (`edit_buttons(..., [])` port convention)
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

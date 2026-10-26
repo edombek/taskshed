@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from telethon import Button, TelegramClient, events
+from telethon import Button, TelegramClient, events, types
 from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate
 
 from taskshed.bot.app import BotApp
@@ -26,6 +26,16 @@ def inline_rows(buttons: ButtonRows) -> list[list]:
     """
     return [[Button.inline(label, data=cb.encode("utf-8")) for label, cb in row]
             for row in buttons]
+
+
+def edit_markup(buttons: ButtonRows):
+    """Markup for ``edit_message``: inline rows, or "remove the keyboard".
+
+    An empty ``ReplyInlineMarkup`` is rejected by Telegram with
+    ReplyMarkupInvalidError (verified against the live API); ``ReplyKeyboard-
+    Hide`` is what actually leaves a message with ``buttons=None``.
+    """
+    return inline_rows(buttons) if buttons else types.ReplyKeyboardHide()
 
 
 class TelegramAdapter:
@@ -95,7 +105,7 @@ class TelegramAdapter:
             # Telethon signature: edit_message(entity, message=<id>, text=…)
             await self.client.edit_message(int(account.platform_user_id),
                                            int(message_id), text=text,
-                                           buttons=inline_rows(buttons),
+                                           buttons=edit_markup(buttons),
                                            parse_mode=None, link_preview=False)
             return True
         except Exception:  # deleted/stale message: caller re-sends instead

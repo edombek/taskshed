@@ -783,3 +783,37 @@ class TestRemindersWhenFlow:
         statuses = [m for m in fake.sent if "Напоминания:" in m.text]
         assert len(statuses) == 1
         assert "каждые 90 мин" in statuses[0].text
+
+
+class TestStaleKeyboardCleanup:
+    """Only the newest screen of a chat keeps its buttons."""
+
+    async def test_previous_keyboards_are_disarmed(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, text="/гдея"))
+        question = fake.sent[-1]
+        assert question.buttons
+        await app.handle(RawEvent("telegram", PID, text="/статистика"))
+        assert question.buttons == []      # older keyboard is dead now
+        assert fake.sent[-1].buttons       # the new screen is armed
+
+    async def test_followup_menu_is_disarmed_too(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, text="/задачи"))
+        menu = fake.sent[-1]
+        assert menu.buttons  # the "anything else?" menu
+        await app.handle(RawEvent("telegram", PID, text="/гдея"))
+        assert menu.buttons == []
+
+    async def test_inplace_screen_stays_armed(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, text="/напоминания"))
+        screen = fake.sent[-1]
+        assert screen.buttons
+        before = len(fake.sent)
+        await app.handle(RawEvent("telegram", PID, callback="rem:toggle"))
+        assert len(fake.sent) == before  # edited in place...
+        assert screen.buttons            # ...and still clickable
