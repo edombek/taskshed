@@ -156,6 +156,9 @@ class BotApp:
         # in-memory transient dialogs: wizard / one-shot text inputs
         self.wizards: dict[int, dict] = {}
         self._pending_inputs: dict[int, str] = {}
+        # last reminder-settings message per (user, account): value changes
+        # edit it in place instead of stacking new copies in the chat
+        self._rem_msgs: dict[tuple[int, int], str] = {}
 
     # ---------- entry ----------
 
@@ -653,6 +656,7 @@ class BotApp:
                 await ctx.reply(t("wizard_cancelled", ctx.lang))
         elif action == "menu" and arg == "back":
             # submenu screens offer ⬅️ Назад: return to the main command menu
+            self._rem_msgs.pop((ctx.user.id, ctx.account.id), None)
             if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
                 self.wizards.pop(ctx.user.id, None)
             ctx.suppress_menu = True
@@ -888,8 +892,7 @@ class BotApp:
                    else f"{st.remind_interval_min} min",
                    quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
                    ttl=st.location_ttl_hours, tz=st.tz)
-        ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
-        await ctx.reply(status, [
+        rows = [
             [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
             [(t("btn_rem_times", ctx.lang), "rem:times"),
              (t("btn_rem_interval", ctx.lang), "rem:interval")],
@@ -897,7 +900,17 @@ class BotApp:
              (t("btn_rem_ttl", ctx.lang), "rem:ttl")],
             [(t("btn_rem_tz", ctx.lang), "rem:tz")],
             [(t("btn_back", ctx.lang), "menu:back")],
-        ])
+        ]
+        ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
+        key = (ctx.user.id, ctx.account.id)
+        mid = self._rem_msgs.get(key)
+        if mid and await ctx.messenger.edit_buttons(ctx.account, mid, status, rows):
+            ctx.replied = True
+            return
+        new_id = await ctx.messenger.send_buttons(ctx.account, status, rows)
+        ctx.replied = True
+        if new_id:
+            self._rem_msgs[key] = new_id
 
     async def _cb_rem(self, ctx: Ctx, arg: str) -> None:
         if arg == "toggle":
@@ -909,6 +922,8 @@ class BotApp:
             return
         if arg in ("times", "interval", "quiet", "ttl", "tz"):
             self._pending_inputs[ctx.user.id] = f"reminput:{arg}"
+            ctx.suppress_menu = True  # the next message is the value itself
+            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang))
 
     async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
         values: dict = {}
@@ -952,11 +967,5 @@ class BotApp:
             values = {"tz": text.strip()}
         st = await self.store.update_settings(ctx.user.id, **values)
         ctx.settings = st
-        await ctx.reply(t("rem_updated", ctx.lang,
-                         status=t("reminders_status", ctx.lang,
-                                 on=t("rem_on" if st.reminders_on else "rem_off", ctx.lang),
-                                 mode=st.remind_mode,
-                                 times=" ".join(st.remind_times) if st.remind_mode == "times"
-                                 else f"{st.remind_interval_min} min",
-                                 quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
-                                 ttl=st.location_ttl_hours, tz=st.tz)))
+        # value changed → the settings screen updates in place, no new copy
+        await self._rem_status(ctx)

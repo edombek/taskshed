@@ -678,3 +678,46 @@ class TestWizardCancelButton:
         await send(env, cb="wz:cancel")
         assert fake.find("Отменено")
         assert not app.wizards
+
+
+class TestReminderSettingsFlow:
+    async def _open_settings(self, env):
+        await send(env, "Дом")
+        app, store, fake = env
+        fake.clear()
+        await app.handle(RawEvent("telegram", PID, text="/напоминания"))
+        return app, store, fake
+
+    async def _cb(self, app, cb):
+        await app.handle(RawEvent("telegram", PID, callback=cb))
+
+    async def _text(self, app, text):
+        await app.handle(RawEvent("telegram", PID, text=text))
+
+    async def test_buttons_prompt_and_status_edits_in_place(self, env):
+        app, store, fake = await self._open_settings(env)
+        assert len(fake.sent) == 1 and "Напоминания:" in fake.texts()[0]
+        await self._cb(app, "rem:times")
+        assert "Новые времена" in fake.texts()[-1]  # prompt now appears
+        await self._text(app, "09:00 18:30")
+        statuses = [m for m in fake.sent if "Напоминания:" in m.text]
+        assert len(statuses) == 1  # the screen was edited, not duplicated
+        assert "Времена: 09:00 18:30" in statuses[0].text
+        st = await store.get_settings((await store.get_user_by_account(
+            "telegram", PID)).id)
+        assert st.remind_times == ["09:00", "18:30"]
+
+    async def test_toggle_edits_same_message(self, env):
+        app, store, fake = await self._open_settings(env)
+        await self._cb(app, "rem:toggle")
+        statuses = [m for m in fake.sent if "Напоминания:" in m.text]
+        assert len(statuses) == 1 and "выключены" in statuses[0].text
+
+    async def test_bad_value_reprompts_without_touching_status(self, env):
+        app, store, fake = await self._open_settings(env)
+        await self._cb(app, "rem:ttl")
+        assert "1–168" in fake.texts()[-1]
+        await self._text(app, "999")
+        statuses = [m for m in fake.sent if "Напоминания:" in m.text]
+        assert len(statuses) == 1
+        assert fake.find("Не понял")

@@ -157,12 +157,12 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         key = (monday.year, monday.month)
         if key not in seen:
             seen.add(key)
-            ax.text(wi + 0.1, -0.75, monday.strftime("%b"), fontsize=7,
+            ax.text(wi + 0.1, -0.75, t(f"hm_m{monday.month}", lang), fontsize=7,
                     ha="left", va="center", color=HEAT_TEXT)
     # weekday labels centered on their rows (cells span row..row+0.86)
-    for row, name in ((0, "Mon"), (2, "Wed"), (4, "Fri")):
-        ax.text(-0.25, row + 0.43, name, fontsize=7, ha="right", va="center",
-                color=HEAT_TEXT)
+    for row, key in ((0, "hm_mon"), (2, "hm_wed"), (4, "hm_fri")):
+        ax.text(-0.25, row + 0.43, t(key, lang), fontsize=7, ha="right",
+                va="center", color=HEAT_TEXT)
 
     ax.set_xlim(-2.4, n_weeks)
     # bottom must clear the Sunday row: cells span row..row+0.86, Sunday is
