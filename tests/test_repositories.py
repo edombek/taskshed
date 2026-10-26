@@ -132,22 +132,6 @@ class TestTasksAndOccurrences:
         # before the work window opens it stays out of the way
         assert await store.occurrences_today(user.id, date(2026, 10, 25), "Europe/Moscow") == []
 
-    async def test_completions_in_range(self, store):
-        user = await make_user(store)
-        work = (await store.list_places(user.id))[1]
-        task = await store.create_task(user.id, work.id, "T", ScheduleType.EVERY_N_DAYS,
-                                       {"n": 1, "anchor": "2026-10-25"}, time(9, 0))
-        await store.materialize_occurrences(task, date(2026, 10, 25), 1, "Europe/Moscow")
-        occs = await store.occurrences_today(user.id, date(2026, 10, 26), "Europe/Moscow")
-        for occ, _ in occs:
-            await store.mark_done(occ.id, "telegram")
-        stamps = await store.completions_in_range(
-            user.id, datetime(2026, 10, 25, tzinfo=UTC), datetime(2026, 10, 27, tzinfo=UTC))
-        assert len(stamps) == len(occs) and all(s.tzinfo is not None for s in stamps)
-        assert await store.completions_in_range(
-            user.id, datetime(2020, 1, 1, tzinfo=UTC), datetime(2020, 2, 1, tzinfo=UTC)) == []
-
-
 class TestLocation:
     async def test_set_get_location(self, store):
         user = await make_user(store)

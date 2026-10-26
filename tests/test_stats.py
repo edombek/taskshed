@@ -118,20 +118,49 @@ class TestCharts:
         last_monday = first + timedelta(weeks=n - 1)
         assert last_monday >= d0  # the week holding the planned day is drawn
 
+    def test_heatmap_window_week_ahead_without_tasks(self):
+        # nothing planned ahead still has to leave a week of empty cells,
+        # otherwise the chart cannot show "what is coming"
+        d0 = date(2026, 10, 26)
+        days = {d0 - timedelta(days=2): {"done": 1}}
+        first, n = charts._heatmap_window(days, end=d0 + timedelta(days=7),
+                                          min_weeks=5, max_weeks=53)
+        last_monday = first + timedelta(weeks=n - 1)
+        assert last_monday + timedelta(days=6) >= d0 + timedelta(days=7)
+
     def test_hourly_heatmap(self, tmp_path):
-        grid = {(date(2026, 10, 26), h): (h % 5) for h in range(24)}
-        grid[(date(2026, 10, 27), 9)] = 3
+        grid = {(date(2026, 10, 26), h): {"done": h % 5, "missed": h % 3,
+                                          "skipped": 1 if h == 4 else 0,
+                                          "pending": 1 if h == 20 else 0}
+                for h in range(24)}
+        grid[(date(2026, 10, 27), 9)] = {"pending": 2}
         out = str(tmp_path / "hours.png")
-        assert charts.hourly_heatmap(grid, "ru", out) == out
+        assert charts.hourly_heatmap(
+            grid, "ru", out,
+            (date(2026, 10, 25), date(2026, 11, 2)), date(2026, 10, 26)) == out
         assert os.path.getsize(out) > 500
         assert charts.hourly_heatmap({}, "ru", out) == ""
 
-    def test_completions_by_hour(self):
-        from taskshed.core.stats import completions_by_hour
+    def test_activity_by_hour(self):
+        from taskshed.core.stats import activity_by_hour
 
-        stamps = [datetime(2026, 10, 26, 7, 30, tzinfo=UTC),
-                  datetime(2026, 10, 26, 7, 55, tzinfo=UTC),
-                  datetime(2026, 10, 27, 20, 5, tzinfo=UTC)]
-        grid = completions_by_hour(stamps, "Europe/Moscow")
-        assert grid[(date(2026, 10, 26), 10)] == 2  # 07:30Z = 10:30 MSK
-        assert grid[(date(2026, 10, 27), 23)] == 1  # 20:05Z = 23:05 MSK
+        def at(day, hour, status, start=None):
+            occ = TaskOccurrence(id=day * 100 + hour, task_id=1,
+                                 due_at=datetime(2026, 10, day, 23, 59,
+                                                 tzinfo=UTC),
+                                 reminder_at=datetime(2026, 10, day, hour, 30,
+                                                      tzinfo=UTC),
+                                 start_at=start, status=OccurrenceStatus(status))
+            return occ, Task(id=1, user_id=1, place_id=1, title="T")
+
+        occs = [at(26, 7, "done"), at(26, 7, "missed"), at(26, 9, "skipped"),
+                at(27, 20, "pending"),
+                at(28, 3, "in_progress",
+                   start=datetime(2026, 10, 28, 11, 0, tzinfo=UTC))]
+        grid = activity_by_hour(occs, "Europe/Moscow")
+        # 07:30Z = 10:30 MSK: missed and done share the cell, like on the daily map
+        assert grid[(date(2026, 10, 26), 10)] == {"done": 1, "missed": 1,
+                                                  "skipped": 0, "pending": 0}
+        assert grid[(date(2026, 10, 26), 12)]["skipped"] == 1  # 09:30Z
+        assert grid[(date(2026, 10, 28), 14)]["pending"] == 1  # start_at 11:00Z
+        assert (date(2026, 10, 27), 23) in grid               # 20:30Z planned

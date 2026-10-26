@@ -995,6 +995,25 @@ class TestChartHorizonAndHours:
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "fmt:chart:month" in flat and "fmt:hours:month" not in flat
 
+    async def test_hourly_map_covers_missed_and_skipped(self, env):
+        # the hour grid is not only about finished tasks: a week where nothing
+        # was completed still has to be drawn, with missed/skipped marked
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        today = datetime.now(UTC).date()
+        task = await store.create_task(user.id, pid, "Уборка",
+                                       ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": today.isoformat()},
+                                       time(9, 0))
+        await store.materialize_occurrences(task, today, 1, "UTC")
+        occs = await store.occurrences_today(user.id, today, "UTC")
+        await store.skip(occs[0][0].id)
+        app._pending_inputs.clear()
+        await app.handle(RawEvent("telegram", PID, callback="fmt:hours:week"))
+        assert any(m.image for m in fake.sent)
+
     async def test_planned_task_shows_up_within_the_horizon(self, env):
         app, store, fake = env
         await send(env, "Дом")

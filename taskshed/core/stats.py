@@ -70,15 +70,25 @@ def trend(occs: list[tuple[TaskOccurrence, Task]], tz: str) -> list[tuple[date, 
     return [(k, v["done"], v["total"]) for k, v in sorted(buckets.items())]
 
 
-def completions_by_hour(done_at: list[datetime], tz: str) -> dict[tuple[date, int], int]:
-    """(user-local date, hour of day) -> tasks finished in that hour.
+def occurrence_moment(occ: TaskOccurrence) -> datetime:
+    """The hour a repeat really belongs to: start of work, else reminder time."""
+    return occ.start_at or occ.reminder_at or occ.due_at
 
-    Short reporting periods are drawn as an hour-level grid, so the daily
-    view is not the only resolution available.
+
+def activity_by_hour(occs: list[tuple[TaskOccurrence, Task]],
+                     tz: str) -> dict[tuple[date, int], dict]:
+    """(user-local date, hour of day) -> status counts.
+
+    Same statuses as the daily map, so a short period can be read hour by
+    hour: what was done, missed, skipped and what is still planned.
     """
     tzinfo = ZoneInfo(tz)
-    grid: dict[tuple[date, int], int] = defaultdict(int)
-    for stamp in done_at:
-        local = stamp.astimezone(tzinfo)
-        grid[(local.date(), local.hour)] += 1
-    return dict(grid)
+    hours: dict[tuple[date, int], dict] = defaultdict(
+        lambda: {"done": 0, "missed": 0, "skipped": 0, "pending": 0}
+    )
+    for occ, _ in occs:
+        local = occurrence_moment(occ).astimezone(tzinfo)
+        cell = hours[(local.date(), local.hour)]
+        status = "pending" if occ.status in ("pending", "in_progress") else occ.status
+        cell[status] += 1
+    return dict(hours)

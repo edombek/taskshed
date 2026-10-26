@@ -514,17 +514,3 @@ class Store:
                 .order_by(TaskOccurrence.due_at)
             )
             return [(_occ(o), _task(t)) for o, t in rows]
-
-    async def completions_in_range(self, user_id: int, start: datetime,
-                                   end: datetime) -> list[datetime]:
-        """Moments tasks were actually finished (tz-aware UTC)."""
-        async with self._sf() as s:
-            stamps = (await s.scalars(
-                select(Completion.done_at)
-                .join(TaskOccurrence, TaskOccurrence.id == Completion.occurrence_id)
-                .join(Task, Task.id == TaskOccurrence.task_id)
-                .where(Task.user_id == user_id,
-                       Completion.done_at >= _naive(start),
-                       Completion.done_at <= _naive(end))
-            )).all()
-            return [_aware(d) for d in stamps]

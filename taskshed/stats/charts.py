@@ -51,17 +51,28 @@ def daily_bar(days: dict[date, dict], lang: str, out_path: str) -> str:
     return out_path
 
 
-def hourly_heatmap(grid: dict[tuple[date, int], int], lang: str, out_path: str) -> str:
+def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
+                   day_range: tuple[date, date] | None = None,
+                   today: date | None = None) -> str:
     """Day rows × 24 hour columns — the short-period view of the same data.
 
-    Same dark palette as the daily map: the base square is the number of
-    completions finished inside that hour, empty hours stay dark gray.
+    Same visual language as the daily map: the base square is the number of
+    tasks finished in that hour, and inside it a red inset marks missed ones,
+    an orange one skipped, a blue one still planned. `day_range` draws every
+    day of the period, including the empty days ahead.
     """
+    from datetime import timedelta
+
+    from matplotlib.lines import Line2D
     from matplotlib.patches import Rectangle
 
-    if not grid:
+    if day_range:
+        first, last = day_range
+        days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+    else:
+        days = sorted({d for d, _ in grid})
+    if not days:
         return ""
-    days = sorted({d for d, _ in grid})
     n_days = len(days)
 
     fig, ax = plt.subplots(figsize=(0.36 * 24 + 3.0, 0.46 * n_days + 1.3))
@@ -69,15 +80,26 @@ def hourly_heatmap(grid: dict[tuple[date, int], int], lang: str, out_path: str) 
     ax.set_facecolor(HEAT_BG)
     for row, d in enumerate(days):
         for hour in range(24):
-            done = int(grid.get((d, hour), 0))
+            agg = grid.get((d, hour), {})
+            done = int(agg.get("done", 0))
             ax.add_patch(Rectangle((hour, row), 0.86, 0.86,
                                    facecolor=HEAT_GREENS[min(done, 4)],
                                    edgecolor=HEAT_BG, linewidth=0.4))
+            if int(agg.get("missed", 0)):
+                ax.add_patch(Rectangle((hour + 0.5, row), 0.36, 0.36,
+                                       facecolor=HEAT_MISSED, edgecolor="none"))
+            if int(agg.get("pending", 0)):
+                ax.add_patch(Rectangle((hour + 0.5, row + 0.5), 0.36, 0.36,
+                                       facecolor=HEAT_PENDING, edgecolor="none"))
+            if int(agg.get("skipped", 0)):
+                ax.add_patch(Rectangle((hour, row + 0.5), 0.36, 0.36,
+                                       facecolor=HEAT_SKIPPED, edgecolor="none"))
 
-    # day labels on the left, hour labels under the grid every third hour
+    # day labels on the left (today in green), hour labels every third hour
     for row, d in enumerate(days):
         ax.text(-0.35, row + 0.43, d.strftime("%d.%m"), fontsize=6.5, ha="right",
-                va="center", color=HEAT_TEXT)
+                va="center",
+                color=HEAT_GREENS[3] if d == today else HEAT_TEXT)
     for hour in range(0, 24, 3):
         ax.text(hour + 0.43, n_days + 0.3, f"{hour:02d}", fontsize=6.5,
                 ha="center", va="center", color=HEAT_TEXT)
@@ -85,6 +107,25 @@ def hourly_heatmap(grid: dict[tuple[date, int], int], lang: str, out_path: str) 
     ax.set_xlim(-2.2, 24)
     ax.set_ylim(n_days + 0.9, -0.6)  # inverted: the first day on top
     ax.axis("off")
+
+    handles = [
+        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
+               markerfacecolor=HEAT_GREENS[4], markeredgecolor="none",
+               label=_legend(lang)[0]),
+        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
+               markerfacecolor=HEAT_MISSED, markeredgecolor="none",
+               label=_legend(lang)[1]),
+        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
+               markerfacecolor=HEAT_PENDING, markeredgecolor="none",
+               label=_legend(lang)[2]),
+        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
+               markerfacecolor=HEAT_SKIPPED, markeredgecolor="none",
+               label=_legend(lang)[3]),
+    ]
+    leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
+                    frameon=False, bbox_to_anchor=(0.5, -0.02))
+    for txt in leg.get_texts():
+        txt.set_color(HEAT_TEXT)
     fig.savefig(out_path, dpi=110, facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
     return out_path
@@ -146,14 +187,17 @@ def _heatmap_window(days: dict[date, dict], end: date | None,
 
 def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                    max_weeks: int = 53, min_weeks: int = 5,
-                   end: date | None = None) -> str:
+                   end: date | None = None, today: date | None = None) -> str:
     """GitHub-contribution-style grid: week columns, Mon-Sun rows.
 
     Cell base color = number of completions (green scale, GitHub dark
     palette on a dark canvas); every day of the window gets a cell, empty
     ones stay dark gray. Inside a cell a small red square marks missed
     occurrences (top-right), a blue one still-planned ones (bottom-right)
-    and an orange one skipped ones (bottom-left).
+    and an orange one skipped ones (bottom-left). `end` extends the window
+    up to that date, so the days ahead are drawn even when nothing is
+    planned in them; `today` outlines the current day as the past/future
+    boundary.
     """
     from datetime import timedelta
 
@@ -188,6 +232,12 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                                                 facecolor=HEAT_SKIPPED,
                                                 edgecolor="none"))
             d += timedelta(days=1)
+
+    # outline today: everything below/right of it is the plan for ahead
+    if today and 0 <= (today - first_monday).days < n_weeks * 7:
+        wi, row = divmod((today - first_monday).days, 7)
+        ax.add_patch(mpatches.Rectangle((wi, row), 0.86, 0.86, facecolor="none",
+                                        edgecolor=HEAT_TEXT, linewidth=1.1))
 
     # month labels above the column where a month first appears
     seen: set[tuple[int, int]] = set()

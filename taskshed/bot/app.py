@@ -493,17 +493,29 @@ class BotApp:
                     ctx.account, path, "stats.xlsx", t("stats_sent_doc", ctx.lang))
             elif fmt == "hours":
                 # day rows × hour columns: what a short period really looked like
-                stamps = await self.store.completions_in_range(ctx.user.id, start, end)
-                grid = sagg.completions_by_hour(stamps, ctx.settings.tz)
+                grid = sagg.activity_by_hour(past, ctx.settings.tz)
+                tzinfo = ZoneInfo(ctx.settings.tz)
+                first = start.astimezone(tzinfo).date()
+                last = end.astimezone(tzinfo).date()
+                if (last - first).days > 40:  # keep the picture readable
+                    first = last - timedelta(days=40)
                 path = os.path.join(tmp, "hours.png")
-                if not charts.hourly_heatmap(grid, ctx.lang, path):
+                if not charts.hourly_heatmap(
+                        grid, ctx.lang, path, (first, last),
+                        datetime.now(tzinfo).date()):
                     await ctx.reply(t("stats_no_data", ctx.lang))
                     return
                 await ctx.messenger.send_image(
                     ctx.account, path, t("stats_hours_caption", ctx.lang))
             else:  # chart: GitHub-style activity map (daily bars retired)
                 heat = os.path.join(tmp, "activity.png")
-                if not charts.github_heatmap(days, ctx.lang, heat):
+                tzinfo = ZoneInfo(ctx.settings.tz)
+                # the window reaches into the future, so the days ahead are
+                # drawn even before anything is planned in them
+                if not charts.github_heatmap(
+                        days, ctx.lang, heat,
+                        end=end.astimezone(tzinfo).date(),
+                        today=datetime.now(tzinfo).date()):
                     await ctx.reply(t("stats_no_data", ctx.lang))
                     return
                 await ctx.messenger.send_image(

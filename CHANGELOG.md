@@ -72,11 +72,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and its value are shown in Russian on the settings screen («Режим:
   по временам (09:00 13:00)»), and the prompts explain what the values
   mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
-- **Activity charts, further ahead and finer grained**: the heatmap now covers
-  *planned* tasks up to a per-user horizon (`user_settings.stats_horizon_days`,
-  default one week, editable via ⚙️ Настройки → «📊 Горизонт графика»), and a
-  week period additionally offers an **hour-level** activity map — day rows ×
-  24 hour columns, built from the real completion timestamps.
+- **Activity charts, further ahead and finer grained**: the daily heatmap draws
+  the whole window up to a per-user horizon — the days ahead stay on the picture
+  even while nothing is planned in them, and today's cell is outlined as the
+  past/future boundary (`user_settings.stats_horizon_days`, default one week,
+  editable via ⚙️ Настройки → «📊 График вперёд»). The week period also offers an
+  **hour-level** map (day rows × 24 hour columns) that uses the same statuses as
+  the daily one — done, missed, skipped and still-planned occurrences land in the
+  hour they are worked in (`start_at`, else the reminder time), so short periods
+  show what was missed and what is coming, not only what was finished.
 - **🔔 Напоминания → ⚙️ Настройки**: one screen now holds everything a user
   configures — reminders (mode and value), quiet hours, location validity,
   time zone, chart horizon, language and the **platform linking status**
