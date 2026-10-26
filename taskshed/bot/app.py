@@ -160,10 +160,19 @@ class BotApp:
     # ---------- text ----------
 
     async def _cmd_start(self, ctx: Ctx, _: str) -> None:
-        await ctx.reply(t("greet", ctx.lang))
+        await ctx.reply(t("greet", ctx.lang), self._menu_rows(ctx.lang))
 
     async def _cmd_help(self, ctx: Ctx, _: str) -> None:
-        await ctx.reply(t("help_text", ctx.lang))
+        await ctx.reply(t("help_text", ctx.lang), self._menu_rows(ctx.lang))
+
+    def _menu_rows(self, lang: str) -> ButtonRows:
+        """Inline menu under /start and /help: one button per command."""
+        return [
+            [(t("menu_where", lang), "cmd:where"), (t("menu_tasks", lang), "cmd:tasks")],
+            [(t("menu_task", lang), "cmd:task"), (t("menu_places", lang), "cmd:places")],
+            [(t("menu_reminders", lang), "cmd:reminders"),
+             (t("menu_stats", lang), "cmd:stats")],
+        ]
 
     async def _cmd_where(self, ctx: Ctx, _: str) -> None:
         self._pending_inputs[ctx.user.id] = "where"
@@ -371,10 +380,16 @@ class BotApp:
                 return
             y, mo, d, h, mi = (int(g) for g in m.groups())
             try:
-                w["data"]["deadline"] = datetime(y, mo, d, h, mi, tzinfo=ctx.tz)
+                deadline = datetime(y, mo, d, h, mi, tzinfo=ctx.tz)
             except ValueError:
                 await ctx.reply(t("wizard_bad_input", ctx.lang, hint=hint))
                 return
+            # guards the "2016 instead of 2026" typo: a once-task due before
+            # today would materialize nothing and silently never show up
+            if deadline.date() < datetime.now(ctx.tz).date():
+                await ctx.reply(t("wizard_deadline_past", ctx.lang, hint=hint))
+                return
+            w["data"]["deadline"] = deadline
             await self._wizard_ask_reminder(ctx, w)
         elif step == "reminder":
             rt = time(9, 0)
@@ -419,7 +434,11 @@ class BotApp:
 
     async def _on_callback(self, ctx: Ctx, cb: str) -> None:
         action, _, arg = cb.partition(":")
-        if action == "place":
+        if action == "cmd":  # inline menu buttons from /start and /help
+            handler = getattr(self, f"_cmd_{arg}", None)
+            if handler:
+                await handler(ctx, "")
+        elif action == "place":
             await self._cb_place(ctx, int(arg))
         elif action == "sched":
             await self._cb_sched(ctx, arg)

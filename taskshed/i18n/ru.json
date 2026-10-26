@@ -69,6 +69,13 @@
   "unlink_done": "Аккаунт отвязан.",
 
   "lang_menu": "Выберите язык:",
+  "menu_where": "📍 Где я",
+  "menu_tasks": "📋 Задачи",
+  "menu_task": "➕ Новая задача",
+  "menu_places": "🏠 Места",
+  "menu_reminders": "🔔 Напоминания",
+  "menu_stats": "📊 Статистика",
+  "wizard_deadline_past": "Такой дедлайн уже прошёл — выберите сегодня или позже.\n{hint}",
   "lang_set": "Язык: русский",
 
   "digest_where": "📍 Где вы сейчас?",

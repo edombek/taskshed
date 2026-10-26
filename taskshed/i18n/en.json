@@ -69,6 +69,13 @@
   "unlink_done": "Account detached.",
 
   "lang_menu": "Choose language:",
+  "menu_where": "📍 Where am I",
+  "menu_tasks": "📋 Tasks",
+  "menu_task": "➕ New task",
+  "menu_places": "🏠 Places",
+  "menu_reminders": "🔔 Reminders",
+  "menu_stats": "📊 Stats",
+  "wizard_deadline_past": "That deadline is already in the past — pick today or later.\n{hint}",
   "lang_set": "Language: English",
   
 

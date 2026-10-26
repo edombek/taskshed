@@ -214,3 +214,39 @@ class TestLinking:
         same = await store.get_user_by_account("vk", "777")
         assert same.id == user.id
         assert len(await store.get_accounts(user.id)) == 2
+
+
+class TestMenuAndDeadline:
+    async def test_start_and_help_have_menu_buttons(self, env):
+        app, store, fake = env
+        await send(env, "/start")
+        flat = [cb for row in fake.last_buttons() for _, cb in row]
+        assert {"cmd:where", "cmd:tasks", "cmd:task", "cmd:places",
+                "cmd:reminders", "cmd:stats"} == set(flat)
+        await send(env, "/help")
+        assert any(cb.startswith("cmd:")
+                   for _, cb in fake.last_buttons()[0])
+
+    async def test_menu_button_runs_command(self, env):
+        app, store, fake = env
+        await send(env, "Дом")  # registers user, creates place
+        f = await send(env, cb="cmd:places")
+        assert "Дом" in f.texts()[0]
+
+    async def test_once_wizard_rejects_past_deadline(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await send(env, "/задача")
+        await send(env, "Тест")
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:once")
+        f = await send(env, "2016-10-26 04:05")  # year typo: 10 years ago
+        assert "прошёл" in f.texts()[-1]
+        assert await store.list_tasks(user.id) == []  # nothing created
+        today = datetime.now(UTC).date().isoformat()
+        await send(env, f"{today} 12:00")
+        await send(env, "09:00")
+        tasks = await store.list_tasks(user.id)
+        assert len(tasks) == 1 and tasks[0].deadline.year == datetime.now(UTC).year
