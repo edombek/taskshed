@@ -66,7 +66,7 @@ class TestTick:
     async def test_digest_when_fresh_location(self, env):
         app, store, fake = env
         user, p = await setup_user(store)
-        await store.set_location(user.id, p.id)
+        await store.set_location(user.id, p.id, set_at=NOW)
         await run_tick(app, store, NOW)
         assert any("Задача дня" in m.text for m in fake.sent)
         assert any("done:" in cb for row in fake.last_buttons() for _, cb in row)
@@ -77,7 +77,7 @@ class TestTick:
         app, store, fake = env
         user, p = await setup_user(store, place="Работа")
         other = await store.add_place(user.id, "Дача")
-        await store.set_location(user.id, other.id)  # fresh, but no tasks there
+        await store.set_location(user.id, other.id, set_at=NOW)  # fresh, but no tasks there
         await run_tick(app, store, NOW)
         assert fake.sent == []
 
@@ -103,14 +103,14 @@ class TestTick:
         app, store, fake = env
         user, p = await setup_user(store)
         await store.update_settings(user.id, quiet_start="08:00", quiet_end="10:00")
-        await store.set_location(user.id, p.id)
+        await store.set_location(user.id, p.id, set_at=NOW)
         await run_tick(app, store, NOW)
         assert fake.sent == []
 
     async def test_not_yet_trigger_time(self, env):
         app, store, fake = env
         user, p = await setup_user(store)
-        await store.set_location(user.id, p.id)
+        await store.set_location(user.id, p.id, set_at=NOW)
         early = datetime.combine(datetime.now(UTC).date(), time(8, 30), tzinfo=UTC)
         await run_tick(app, store, early)
         assert fake.sent == []
@@ -118,7 +118,7 @@ class TestTick:
     async def test_interval_mode(self, env):
         app, store, fake = env
         user, p = await setup_user(store)
-        await store.set_location(user.id, p.id)
+        await store.set_location(user.id, p.id, set_at=NOW)
         st = await store.update_settings(user.id, remind_mode="interval",
                                          remind_interval_min=60)
         assert st.last_reminded_at is None

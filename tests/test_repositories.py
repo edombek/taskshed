@@ -84,10 +84,12 @@ class TestTasksAndOccurrences:
         task = await store.create_task(user.id, work.id, "T", ScheduleType.ONCE, {},
                                        time(9, 0), deadline=past)
         await store.materialize_occurrences(task, past.date(), 0, "UTC")
-        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
+        # query by the day the occurrence is actually due on: `past` may
+        # fall on the previous UTC day when the suite runs just after midnight
+        occs = await store.occurrences_today(user.id, past.date(), "UTC")
         assert occs and occs[0][0].status == "pending"
         assert await store.mark_overdue(datetime.now(UTC)) == 1
-        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
+        occs = await store.occurrences_today(user.id, past.date(), "UTC")
         assert occs[0][0].status == "missed"
         assert await store.snooze(occs[0][0].id, 60) is True
         # snoozed beyond "now" — nothing overdue anymore

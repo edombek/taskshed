@@ -246,10 +246,11 @@ class Store:
             await s.commit()
             return bool(res.rowcount)
 
-    async def set_location(self, user_id: int, place_id: int) -> None:
+    async def set_location(self, user_id: int, place_id: int,
+                          set_at: datetime | None = None) -> None:
         async with self._sf() as s:
             await s.merge(CurrentLocation(
-                user_id=user_id, place_id=place_id, set_at=_naive(datetime.now(UTC)),
+                user_id=user_id, place_id=place_id, set_at=_naive(set_at or datetime.now(UTC)),
             ))
             await s.commit()
 

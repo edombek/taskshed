@@ -58,7 +58,8 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
 
 - Commit messages: plain conventional-commit style, **no AI co-author trailers
   or AI markers** (owner's explicit choice — do not add them back).
-- GitHub: private repo `github.com/edombek/tg-bot-task-sheduler`, pushed with
+- GitHub: private repo `github.com/edombek/taskshed` (renamed from
+  `tg-bot-task-sheduler`), pushed with
   `gh` (authenticated as `edombek`, ssh protocol). Global git identity is
   `edombek <edombek@yandex.ru>` — do not override globally.
 - Docs: bilingual. `README.md` (English) + `README.ru.md` (Russian), cross-linked;

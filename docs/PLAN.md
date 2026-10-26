@@ -8,7 +8,7 @@ Checklist of the implementation roadmap. EN summary in
 - [x] git repo, `.gitignore`, `pyproject.toml`
 - [x] bilingual README, `docs/` skeleton, Mermaid diagrams
 - [x] GitHub Actions CI: ruff + pytest
-- [x] private repo `github.com/edombek/tg-bot-task-sheduler`
+- [x] private repo `github.com/edombek/taskshed` (renamed 2026-10-26)
 
 ## Stage 1 — Core domain & storage ✅
 - [x] `core/`: domain dataclasses, schedule rules (once / every_n_days /
@@ -51,6 +51,15 @@ Checklist of the implementation roadmap. EN summary in
       (accounts.last_seen picks the primary)
 - [x] Final bilingual docs with diagrams and examples
 - [x] `CHANGELOG.md` up to date
+
+## Stage 7 — Real-world verification 🚧
+- [x] `config.yaml` filled: Telegram token + local MTProxy (`127.0.0.1:8888`)
+- [ ] Alembic `upgrade head` on the real file DB (`taskshed.db`)
+- [ ] Telegram smoke: bot connects through the proxy, `/start` replies
+- [ ] Telegram chat flow: places → tasks → digest → ✅ → stats
+- [ ] VK: real community token + `group_id` (placeholders removed), enable
+- [ ] VK smoke: long poll connects, `/старт` replies
+- [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
