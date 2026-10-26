@@ -167,7 +167,8 @@ class BotApp:
         # bare text with no places at all → treat as place name (first-run UX)
         if not await self.store.list_places(ctx.user.id):
             if await self.store.add_place(ctx.user.id, _defang(text.strip())):
-                await ctx.reply(t("place_added", ctx.lang, name=text))
+                await ctx.reply(t("place_added", ctx.lang, name=text),
+                                self._menu_rows(ctx.lang))
             return
         await ctx.reply(t("unknown_cmd", ctx.lang))
 
@@ -225,7 +226,7 @@ class BotApp:
         tasks = await self.store.list_tasks(ctx.user.id, active_only=False)
         idx = int(arg) - 1
         if 0 <= idx < len(tasks) and await self.store.delete_task(tasks[idx].id, ctx.user.id):
-            await ctx.reply(t("task_deleted", ctx.lang))
+            await ctx.reply(t("task_deleted", ctx.lang), self._menu_rows(ctx.lang))
         else:
             await ctx.reply(t("task_not_found", ctx.lang))
 
@@ -263,19 +264,19 @@ class BotApp:
             await ctx.reply(t("link_bad_code", ctx.lang))
             return
         if owner == ctx.user.id:
-            await ctx.reply(t("link_ok", ctx.lang))
+            await ctx.reply(t("link_ok", ctx.lang), self._menu_rows(ctx.lang))
             return
         # merge current user's data into the code owner, then move account over
         await self.store.attach_account(ctx.account, owner)
         await self.store.merge_user(ctx.user.id, owner)
-        await ctx.reply(t("link_ok", ctx.lang))
+        await ctx.reply(t("link_ok", ctx.lang), self._menu_rows(ctx.lang))
 
     async def _cmd_unlink(self, ctx: Ctx, _: str) -> None:
         accounts = await self.store.get_accounts(ctx.user.id)
         if len(accounts) < 2:
             return
         await self.store.detach_account(ctx.account.id, ctx.user.id)
-        await ctx.reply(t("unlink_done", ctx.lang))
+        await ctx.reply(t("unlink_done", ctx.lang), self._menu_rows(ctx.lang))
 
     async def _cmd_lang(self, ctx: Ctx, arg: str) -> None:
         lang = normalize(arg) if arg in ("ru", "en", "русский", "russian") else None
@@ -354,7 +355,8 @@ class BotApp:
         if w["kind"] == "addplace":
             if await self.store.add_place(ctx.user.id, _defang(text.strip())):
                 self.wizards.pop(ctx.user.id, None)
-                await ctx.reply(t("place_added", ctx.lang, name=text.strip()))
+                await ctx.reply(t("place_added", ctx.lang, name=text.strip()),
+                                self._menu_rows(ctx.lang))
             else:
                 await ctx.reply(t("place_exists", ctx.lang))
             return
@@ -452,7 +454,8 @@ class BotApp:
         place = await self.store.get_place(ctx.user.id, d["place_id"])
         self.wizards.pop(ctx.user.id, None)
         await ctx.reply(t("wizard_saved", ctx.lang, title=task.title,
-                          place=place.name if place else "?"))
+                          place=place.name if place else "?"),
+                        self._menu_rows(ctx.lang))
 
     # ---------- callbacks ----------
 
@@ -556,7 +559,8 @@ class BotApp:
         if intent == "tasks":
             await self._send_task_list(ctx, place)
         else:
-            await ctx.reply(t("where_set", ctx.lang, name=place.name))
+            await ctx.reply(t("where_set", ctx.lang, name=place.name),
+                            self._menu_rows(ctx.lang))
         if was_pending:
             await self._digest_now(ctx.user.id, ctx.account)
 
@@ -592,14 +596,16 @@ class BotApp:
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.mark_done(occ_id, ctx.ev.platform):
-            await ctx.reply(t("msg_done", ctx.lang, title=got[1].title))
+            await ctx.reply(t("msg_done", ctx.lang, title=got[1].title),
+                            self._menu_rows(ctx.lang))
 
     async def _cb_snooze(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.snooze(occ_id, SNOOZE_MIN):
-            await ctx.reply(t("msg_snoozed", ctx.lang, minutes=SNOOZE_MIN, title=got[1].title))
+            await ctx.reply(t("msg_snoozed", ctx.lang, minutes=SNOOZE_MIN,
+                              title=got[1].title), self._menu_rows(ctx.lang))
 
     # ---------- task list / digest ----------
 

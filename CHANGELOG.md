@@ -29,4 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   time presets, typed input still accepted); past-deadline guard;
   URL defanging in task titles/place names + `link_preview=False`
   (anti-spam-ban hygiene); statistics chart now also renders a
-  GitHub-style activity heatmap with per-day missed/planned sub-markers.
+  GitHub-style activity heatmap with per-day missed/planned sub-markers;
+  command menu re-attached to completion replies (task saved, done,
+  snooze, place set, delete, link/unlink); heatmap window always covers
+  at least the last month even when records are sparse.

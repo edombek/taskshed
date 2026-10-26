@@ -77,14 +77,37 @@ def trend_line(points: list[tuple[date, int, int]], lang: str, out_path: str) ->
     return out_path
 
 
+def _heatmap_window(days: dict[date, dict], end: date | None,
+                    min_weeks: int, max_weeks: int) -> tuple[date, int]:
+    """(first Monday, week count) — always at least `min_weeks` weeks back
+    from the newest day (or today), so sparse periods still show a month."""
+    from datetime import timedelta
+
+    lo, hi = min(days), max(days)
+    anchor = max(hi, end or date.today())
+    first_monday = lo - timedelta(days=lo.weekday())
+    last_monday = anchor - timedelta(days=anchor.weekday())
+    if last_monday < first_monday:
+        last_monday = first_monday
+    n_weeks = (last_monday - first_monday).days // 7 + 1
+    if n_weeks < min_weeks:
+        first_monday = last_monday - timedelta(weeks=min_weeks - 1)
+        n_weeks = min_weeks
+    if n_weeks > max_weeks:  # keep the most recent window, GitHub-like
+        first_monday = last_monday - timedelta(weeks=max_weeks - 1)
+        n_weeks = max_weeks
+    return first_monday, n_weeks
+
+
 def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
-                   max_weeks: int = 53) -> str:
+                   max_weeks: int = 53, min_weeks: int = 5,
+                   end: date | None = None) -> str:
     """GitHub-contribution-style grid: week columns, Mon-Sun rows.
 
-    Cell base color = number of completions (green scale, GitHub palette).
-    Inside a cell a small red square marks missed occurrences (top-right)
-    and a blue square marks still-planned ones (bottom-right), so one day
-    shows all three states at a glance.
+    Cell base color = number of completions (green scale, GitHub palette);
+    every day of the window gets a cell, empty ones stay gray. Inside a
+    cell a small red square marks missed occurrences (top-right) and a
+    blue square marks still-planned ones (bottom-right).
     """
     from datetime import timedelta
 
@@ -93,32 +116,26 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
 
     if not days:
         return ""
-    lo, hi = min(days), max(days)
-    first_monday = lo - timedelta(days=lo.weekday())
-    last_monday = hi - timedelta(days=hi.weekday())
-    n_weeks = (last_monday - first_monday).days // 7 + 1
-    if n_weeks > max_weeks:  # keep the most recent window, GitHub-like
-        first_monday = last_monday - timedelta(weeks=max_weeks - 1)
-        n_weeks = max_weeks
+    first_monday, n_weeks = _heatmap_window(days, end, min_weeks, max_weeks)
 
     fig, ax = plt.subplots(figsize=(0.26 * n_weeks + 2.2, 2.8))
-    for d, agg in days.items():
-        wi = (d - first_monday).days // 7
-        if wi < 0:
-            continue
-        row = d.weekday()
-        done = int(agg.get("done", 0))
-        ax.add_patch(mpatches.Rectangle((wi, row), 0.86, 0.86,
-                                        facecolor=HEAT_GREENS[min(done, 4)],
-                                        edgecolor="white", linewidth=0.4))
-        if int(agg.get("missed", 0)):
-            ax.add_patch(mpatches.Rectangle((wi + 0.5, row), 0.36, 0.36,
-                                            facecolor=HEAT_MISSED,
-                                            edgecolor="none"))
-        if int(agg.get("pending", 0)):
-            ax.add_patch(mpatches.Rectangle((wi + 0.5, row + 0.5), 0.36, 0.36,
-                                            facecolor=HEAT_PENDING,
-                                            edgecolor="none"))
+    d = first_monday
+    for wi in range(n_weeks):
+        for row in range(7):
+            agg = days.get(d, {})
+            done = int(agg.get("done", 0))
+            ax.add_patch(mpatches.Rectangle((wi, row), 0.86, 0.86,
+                                            facecolor=HEAT_GREENS[min(done, 4)],
+                                            edgecolor="white", linewidth=0.4))
+            if int(agg.get("missed", 0)):
+                ax.add_patch(mpatches.Rectangle((wi + 0.5, row), 0.36, 0.36,
+                                                facecolor=HEAT_MISSED,
+                                                edgecolor="none"))
+            if int(agg.get("pending", 0)):
+                ax.add_patch(mpatches.Rectangle((wi + 0.5, row + 0.5), 0.36,
+                                                0.36, facecolor=HEAT_PENDING,
+                                                edgecolor="none"))
+            d += timedelta(days=1)
 
     # month labels above the column where a month first appears
     seen: set[tuple[int, int]] = set()

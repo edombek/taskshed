@@ -91,3 +91,18 @@ class TestCharts:
         far = {date(2025, 1, 1) + timedelta(days=i): {"done": 1} for i in range(400)}
         out3 = str(tmp_path / "h2.png")
         assert charts.github_heatmap(far, "en", out3) == out3
+
+    def test_heatmap_window_at_least_one_month(self):
+        # single recent day → still 5 week columns back from the anchor
+        d0 = date(2026, 10, 26)
+        first, n = charts._heatmap_window({d0: {"done": 1}}, end=d0,
+                                          min_weeks=5, max_weeks=53)
+        assert n == 5
+        assert first <= d0 - timedelta(days=28)
+        assert first.weekday() == 0  # window starts on Monday
+        # sparse period a year long → clamped to 53 weeks
+        sparse = {date(2025, 11, 1): {"done": 1}, d0: {"done": 2}}
+        first, n = charts._heatmap_window(sparse, end=d0, min_weeks=5, max_weeks=53)
+        assert n == 53
+        # empty window helper must not be used for empty data
+        assert charts.github_heatmap({}, "ru", "/tmp/none.png") == ""

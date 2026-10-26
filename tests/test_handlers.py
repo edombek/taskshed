@@ -1,7 +1,7 @@
 """Chat logic end-to-end through BotApp + FakeMessenger (no network)."""
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 
@@ -309,3 +309,38 @@ class TestWizardKeyboards:
         tasks = await store.list_tasks(user.id)
         assert tasks and "www[.]banned[.]org" in tasks[0].title
         assert "www." not in tasks[0].title
+
+
+class TestMenuAfterCommand:
+    async def _menu_on_last(self, env):
+        _, _, fake = env
+        rows = fake.last_buttons()
+        assert rows and any(cb.startswith("cmd:") for r in rows for _, cb in r)
+
+    async def test_done_callback_gets_menu(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        p = (await store.list_places(user.id))[0]
+        await store.set_location(user.id, p.id)
+        anchor = datetime.now(UTC).date().isoformat()
+        task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": anchor}, time(9, 0))
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
+        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
+        await send(env, cb=f"done:{occs[0][0].id}")
+        assert "Готово" in fake.texts()[-1]
+        await self._menu_on_last(env)
+
+    async def test_wizard_save_gets_menu(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await send(env, "/задача")
+        await send(env, "T")
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:monthly_day")
+        await send(env, "15")
+        await send(env, "09:00")
+        await self._menu_on_last(env)

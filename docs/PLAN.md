@@ -68,7 +68,10 @@ Checklist of the implementation roadmap. EN summary in
 - [x] URL defanging in task titles and place names; `link_preview=False`
       on Telegram sends (anti-ban hygiene)
 - [x] GitHub-style activity heatmap (week columns, Mon–Sun rows) with red
-      (missed) and blue (planned) sub-squares inside each day cell
+      (missed) and blue (planned) sub-squares inside each day cell; window
+      always covers at least the last month (empty days drawn gray)
+- [x] Command menu attached to completion replies (task saved, ✅ done,
+      snooze, place set, delete, link/unlink)
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
