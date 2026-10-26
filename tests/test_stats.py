@@ -158,6 +158,26 @@ class TestCharts:
         assert days[date(2026, 10, 26)]["pending"] == 1
         assert days[date(2026, 10, 27)]["pending"] == 1
 
+    def test_heatmap_units_are_the_same_on_both_axes(self, tmp_path):
+        # figsize comes from the axis spans, so a cell is square and the image
+        # grows with the number of cells instead of being blown up to a frame
+        small = charts._grid_figsize(5 + 2.4, 8.2)     # 5 week map
+        big = charts._grid_figsize(53 + 2.4, 8.2)      # a whole year
+        assert small[0] / 7.4 == small[1] / 8.2 == charts.CELL_IN
+        assert big[0] / 55.4 == charts.CELL_IN
+        assert big[0] > 3 * small[0]                   # wide maps get wider
+        out = str(tmp_path / "small.png")
+        days = {date(2026, 10, 26) + timedelta(days=i): {"done": 1} for i in range(20)}
+        assert charts.github_heatmap(days, "ru", out) == out
+        from PIL import Image
+        w1, h1 = Image.open(out).size
+        assert 200 < w1 < 1200 and 200 < h1 < 900       # no postage-stamp, no poster
+        far = {date(2025, 10, 1) + timedelta(days=i): {"done": 1} for i in range(370)}
+        out2 = str(tmp_path / "big.png")
+        charts.github_heatmap(far, "ru", out2)
+        w2, h2 = Image.open(out2).size
+        assert w2 > 2 * w1 and abs(h2 - h1) < 150      # only the legend adds height
+
     def test_hourly_heatmap(self, tmp_path):
         grid = {(date(2026, 10, 26), h): {"done": h % 5, "missed": h % 3,
                                           "skipped": 1 if h == 4 else 0,

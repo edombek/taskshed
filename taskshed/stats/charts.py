@@ -28,6 +28,11 @@ HEAT_SKIPPED = "#e3b341"
 # far above the old 110 dpi, but kept inside Telegram's photo pixel budget
 DPI = 300
 PIXEL_BUDGET = 2_400_000
+# one grid unit (a cell is 0.86 of it) in inches: the picture therefore grows
+# with the number of squares instead of being blown up to a fixed frame
+CELL_IN = 0.20
+# the legend needs horizontal room; narrow maps rely on the caption instead
+LEGEND_MIN_W = 3.0
 
 
 def _dpi_for(width_in: float, height_in: float) -> int:
@@ -35,6 +40,15 @@ def _dpi_for(width_in: float, height_in: float) -> int:
     import math
 
     return max(110, min(DPI, int(math.sqrt(PIXEL_BUDGET / (width_in * height_in)))))
+
+
+def _grid_figsize(x_span: float, y_span: float) -> tuple[float, float]:
+    """Figure size for a grid whose axis limits span x_span × y_span units.
+
+    Both axes get the same inches-per-unit, so cells are square and the image
+    grows with the number of squares instead of being stretched to a fixed frame.
+    """
+    return (CELL_IN * x_span, CELL_IN * y_span)
 
 
 def _legend(lang: str):
@@ -87,7 +101,12 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
         return ""
     n_days = len(days)
 
-    fig, ax = plt.subplots(figsize=(0.36 * 24 + 3.0, 0.36 * n_days + 1.0))
+    # one unit per row/column on both axes (labels live inside the limits), so
+    # cells are square and the picture grows with the number of squares
+    x_lo, x_hi = -2.2, 24.0
+    y_hi, y_lo = n_days + 0.9, -0.6
+    figsize = _grid_figsize(x_hi - x_lo, y_hi - y_lo)
+    fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(HEAT_BG)
     ax.set_facecolor(HEAT_BG)
     for row, d in enumerate(days):
@@ -116,8 +135,8 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
         ax.text(hour + 0.43, n_days + 0.3, f"{hour:02d}", fontsize=6.5,
                 ha="center", va="center", color=HEAT_TEXT)
 
-    ax.set_xlim(-2.2, 24)
-    ax.set_ylim(n_days + 0.9, -0.6)  # inverted: the first day on top
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_hi, y_lo)  # inverted: the first day on top
     ax.axis("off")
 
     handles = [
@@ -134,10 +153,11 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
                markerfacecolor=HEAT_SKIPPED, markeredgecolor="none",
                label=_legend(lang)[3]),
     ]
-    leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
-                    frameon=False, bbox_to_anchor=(0.5, -0.02))
-    for txt in leg.get_texts():
-        txt.set_color(HEAT_TEXT)
+    if figsize[0] >= LEGEND_MIN_W:
+        leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
+                        frameon=False, bbox_to_anchor=(0.5, -0.02))
+        for txt in leg.get_texts():
+            txt.set_color(HEAT_TEXT)
     fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()),
               facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
@@ -221,8 +241,12 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         return ""
     first_monday, n_weeks = _heatmap_window(days, end, min_weeks, max_weeks)
 
-    # 0.30 in per cell in both directions, so squares stay square
-    fig, ax = plt.subplots(figsize=(0.30 * n_weeks + 2.6, 0.30 * 8.2 + 0.7))
+    # one unit per week column and per weekday row on both axes (the labels sit
+    # inside the limits): cells are square, the picture grows with their count
+    x_lo, x_hi = -2.4, float(n_weeks)
+    y_hi, y_lo = 6.9, -1.3
+    figsize = _grid_figsize(x_hi - x_lo, y_hi - y_lo)
+    fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(HEAT_BG)
     ax.set_facecolor(HEAT_BG)
     d = first_monday
@@ -267,10 +291,10 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         ax.text(-0.25, row + 0.43, t(key, lang), fontsize=7, ha="right",
                 va="center", color=HEAT_TEXT)
 
-    ax.set_xlim(-2.4, n_weeks)
+    ax.set_xlim(x_lo, x_hi)
     # bottom must clear the Sunday row: cells span row..row+0.86, Sunday is
     # row 6 → 6.86, anything less clips those squares
-    ax.set_ylim(6.9, -1.3)
+    ax.set_ylim(y_hi, y_lo)
     ax.axis("off")
 
     handles = [
@@ -287,11 +311,12 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                markerfacecolor=HEAT_SKIPPED, markeredgecolor="none",
                label=_legend(lang)[3]),
     ]
-    leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
-                    frameon=False, bbox_to_anchor=(0.5, -0.02))
-    for txt in leg.get_texts():
-        txt.set_color(HEAT_TEXT)
+    if figsize[0] >= LEGEND_MIN_W:
+        leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
+                        frameon=False, bbox_to_anchor=(0.5, -0.02))
+        for txt in leg.get_texts():
+            txt.set_color(HEAT_TEXT)
     fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()),
-              facecolor=HEAT_BG, bbox_inches="tight")
+                facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
     return out_path

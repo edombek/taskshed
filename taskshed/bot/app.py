@@ -222,10 +222,10 @@ class BotApp:
         except Exception:
             log.exception("event handling failed: %r", ev)
         # after a *completed* command: a short "anything else?" with the menu.
-        # Not while a wizard step is in progress, not when the answer itself
-        # carries input buttons (stats pickers, start/help).
-        if (ctx.replied and not ctx.suppress_menu
-                and not self.wizards.get(user.id)):
+        # Not in the middle of a wizard (its own screen already carries the next
+        # step's buttons), not when the answer itself has input buttons.
+        wizard_open = (self.wizards.get(user.id) or {}).get("kind") == "task"
+        if ctx.replied and not ctx.suppress_menu and not wizard_open:
             try:
                 mid = await messenger.send_buttons(
                     account, t("menu_ask_more", user.language),
@@ -338,6 +338,27 @@ class BotApp:
             ctx.suppress_menu = True
             await ctx.reply(t("no_places", ctx.lang), self._back_only(ctx))
         self.wizards[ctx.user.id] = {"kind": "addplace"}
+
+    async def _cb_place_delete(self, ctx: Ctx, place_id: int, confirm: bool) -> None:
+        """Delete a place — but first warn about the tasks that go with it."""
+        place = await self.store.get_place(ctx.user.id, place_id)
+        if place is None:
+            await ctx.reply(t("place_removed", ctx.lang))
+            return
+        tasks = await self.store.list_tasks(ctx.user.id, place_id=place_id,
+                                            active_only=False)
+        if tasks and not confirm:
+            ctx.suppress_menu = True
+            await ctx.reply(t("place_delete_ask", ctx.lang, place=place.name,
+                              n=len(tasks)),
+                            [[(t("place_delete_yes", ctx.lang), f"pdelok:{place_id}")],
+                             [(t("btn_back", ctx.lang), "cmd:places")]])
+            return
+        if await self.store.delete_place(ctx.user.id, place_id):
+            note = t("place_removed", ctx.lang)
+            if tasks:
+                note += "\n" + t("place_removed_tasks", ctx.lang, n=len(tasks))
+            await ctx.reply(note)
 
     async def _cmd_delete(self, ctx: Ctx, arg: str) -> None:
         if not arg.isdigit():
@@ -951,7 +972,6 @@ class BotApp:
             await ctx.reply(t("task_not_found", ctx.lang))
             return
         self._edit_tab[ctx.user.id] = tab
-        self.wizards[ctx.user.id] = self._edit_wizard(task, tab)
         ctx.suppress_menu = True
         await ctx.reply("\n".join([f"✏️ {task.title}"] + await self._task_lines(ctx, task)),
                         self._task_open_rows(ctx, task))
@@ -1036,8 +1056,9 @@ class BotApp:
                     return
                 await self._wizard_ask_reminder(ctx, w)
         elif action == "pdel":
-            if await self.store.delete_place(ctx.user.id, int(arg)):
-                await ctx.reply(t("place_removed", ctx.lang))
+            await self._cb_place_delete(ctx, int(arg), False)
+        elif action == "pdelok":
+            await self._cb_place_delete(ctx, int(arg), True)
         elif action == "edt":  # task editor: open one task's card
             tab, _, tid = arg.partition(":")
             if tid.isdigit():

@@ -176,5 +176,8 @@
   "edit_f_reminder": "🔔 Reminder",
   "edit_delete": "🗑 Delete task",
   "edit_delete_ask": "Delete “{title}” with all of its repeats?",
-  "edit_delete_yes": "✅ Yes, delete"
+  "edit_delete_yes": "✅ Yes, delete",
+  "place_delete_ask": "Delete the place “{place}”? It also removes {n} task(s), their whole history.",
+  "place_delete_yes": "✅ Yes, delete the place",
+  "place_removed_tasks": "{n} task(s) were removed together with the place."
 }

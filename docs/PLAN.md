@@ -124,6 +124,10 @@ Checklist of the implementation roadmap. EN summary in
       repeats and keeps finished history
 - [x] SQLite: `PRAGMA foreign_keys=ON` per connection, so ON DELETE CASCADE
       actually removes a deleted task's occurrences and completions
+- [x] Menu follow-up after every action (a card/screen is not a dialog: only a
+      wizard step suppresses it); place deletion confirms with the task count
+- [x] Chart figures sized from the grid (equal unit on both axes, size grows
+      with the number of cells; legend only on wide maps)
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

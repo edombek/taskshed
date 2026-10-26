@@ -116,3 +116,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `IMessenger.edit_buttons(account, id, text, [])` strips the keyboard —
   Telegram sends `ReplyKeyboardHide` (an empty `ReplyInlineMarkup` is
   rejected by the API; verified live), VK cannot edit and skips it.
+
+### Fixed
+- **The main menu comes back after every action**: the task-editor card and the
+  places screen used to leave a dialog open in memory, so the *next* answer
+  (Готово / Пропущено / ⏰ Отложено, digests) arrived with its old buttons
+  stripped and no new keyboard — nothing was clickable. Only an actual wizard
+  step now suppresses the «Хотите сделать что-нибудь ещё?» follow-up.
+- **Deleting a place asks first**: it silently removed every task of that place
+  together with its whole history (now that SQLite cascades really run). The
+  confirmation names how many tasks go with it.
+- **Charts are sized by their cells, not by a fixed frame**: figure size is
+  derived from the axis spans, so one cell gets the same pixels on both axes
+  (squares are square) and the picture grows with the number of cells — a
+  5-week map is ~509 px wide instead of 1226, a year map 2636. Narrow maps skip
+  the legend, the caption already names the colors.

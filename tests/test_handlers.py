@@ -961,6 +961,40 @@ class TestTaskEditor:
         assert not [o for o, t in occs if t.id == back]  # cascade, no orphans
 
 
+    async def test_menu_returns_after_the_editor_and_a_skip(self, env):
+        # browsing the editor must not leave a dialog open: skip/done replies
+        # still end with the main menu, otherwise nothing is clickable anymore
+        app, store, _ = env
+        store, user, _, every, *_ = await self._seed(env)
+        home = next(p.id for p in await store.list_places(user.id) if p.name == "Дом")
+        await store.set_location(user.id, home)
+        await send(env, "/изменить")
+        await send(env, cb="etab:all")
+        await send(env, cb=f"edt:all:{every}")
+        assert not app.wizards, "a card is not a dialog: no wizard may stay open"
+        f = await send(env, "/задачи")
+        skip = next(cb for row in prev_buttons(f) for _, cb in row
+                    if cb.startswith("skip:"))
+        f = await send(env, cb=skip)
+        assert "Пропущено" in f.texts()[0]
+        assert "Хотите сделать" in f.texts()[-1]
+        assert "cmd:tasks" in [cb for row in f.sent[-1].buttons for _, cb in row]
+
+    async def test_place_delete_asks_before_wiping_its_tasks(self, env):
+        store, user, future, every, weekly, back, _ = await self._seed(env)
+        home = next(p.id for p in await store.list_places(user.id) if p.name == "Дом")
+        f = await send(env, cb=f"pdel:{home}")
+        assert "pdelok" in " ".join(self._cbs(f))
+        assert await store.get_place(user.id, home) is not None
+        f = await send(env, cb=f"pdelok:{home}")
+        assert "удалено задач: 4" in f.texts()[0]
+        assert await store.get_place(user.id, home) is None
+        assert await store.list_tasks(user.id, active_only=False) == []
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC) - timedelta(days=90), datetime.now(UTC))
+        assert occs == []  # history went with it, and the user said yes to that
+
+
 class TestSavedCard:
     """Saving a task answers with what was created: window + reminder + next."""
 
