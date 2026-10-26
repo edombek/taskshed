@@ -42,6 +42,11 @@ async def place_id_of(store, pid_user, name):
     raise AssertionError(f"place {name} not found")
 
 
+def prev_buttons(f) -> list:
+    """Buttons of the command's own reply (the menu follow-up is the last)."""
+    return f.sent[-2].buttons or []
+
+
 class TestOnboarding:
     async def test_start_and_first_place(self, env):
         app, store, fake = env
@@ -60,7 +65,7 @@ class TestOnboarding:
 
     async def test_language_switch(self, env):
         f = await send(env, "/lang")
-        assert f.last_buttons()[0][1][1] == "lang:en"
+        assert prev_buttons(f)[0][1][1] == "lang:en"
         f = await send(env, cb="lang:en")
         assert f.texts()[0] == "Language: English"
         _, store, _ = env
@@ -117,7 +122,7 @@ class TestWhereAndTasks:
         user = await store.get_user_by_account("telegram", PID)
         pid_home = await place_id_of(store, user.id, "Дом")
         f = await send(env, "/гдея")
-        assert f.last_buttons()[0][0][1] == f"place:{pid_home}"
+        assert prev_buttons(f)[0][0][1] == f"place:{pid_home}"
         f = await send(env, cb=f"place:{pid_home}")
         assert "Текущее место: Дом" in f.texts()[0]
 
@@ -136,7 +141,7 @@ class TestWhereAndTasks:
         await store.set_location(user.id, pid_home)
         f = await send(env, "/задачи")
         assert "Полить цветы" in f.texts()[0]
-        occ_cb = f.last_buttons()[0][0][1]
+        occ_cb = prev_buttons(f)[0][0][1]
         assert occ_cb.startswith("done:")
         occ_id = int(occ_cb.split(":")[1])
         f = await send(env, cb=occ_cb)
@@ -150,7 +155,7 @@ class TestWhereAndTasks:
         user = await store.get_user_by_account("telegram", PID)
         pid_home = await place_id_of(store, user.id, "Дом")
         f = await send(env, "/задачи")
-        assert f.last_buttons()[0][0][1] == f"place:{pid_home}"
+        assert prev_buttons(f)[0][0][1] == f"place:{pid_home}"
         f = await send(env, cb=f"place:{pid_home}")
         # tasks list followed the location answer
         assert "нет" in f.texts()[0].lower() or "Задачи" in f.texts()[0]
@@ -329,7 +334,7 @@ class TestMenuAfterCommand:
         await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
         occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
         await send(env, cb=f"done:{occs[0][0].id}")
-        assert "Готово" in fake.texts()[-1]
+        assert fake.find("Готово")
         await self._menu_on_last(env)
 
     async def test_wizard_save_gets_menu(self, env):
@@ -360,7 +365,7 @@ class TestStatsIncludePlanned:
         assert "запланировано" in f.texts()[-1]
 
 
-class TestMenuOnEveryReply:
+class TestMenuFollowUp:
     async def test_plain_reply_gets_menu_by_default(self, env):
         app, store, fake = env
         await send(env, "Дом")
@@ -379,6 +384,98 @@ class TestMenuOnEveryReply:
                                        {"n": 1, "anchor": anchor}, time(9, 0))
         await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
         f = await send(env, "/задачи")
-        flat = [cb for row in f.last_buttons() for _, cb in row]
+        flat = [cb for row in prev_buttons(f) for _, cb in row]
         assert any(cb.startswith("done:") for cb in flat)
+        flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "cmd:task" in flat
+
+
+class TestSnoozePicker:
+    """⏭ Отложить must ask *how long* instead of picking a fixed hour."""
+
+    async def _occ(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        p = (await store.list_places(user.id))[0]
+        await store.set_location(user.id, p.id)
+        anchor = datetime.now(UTC).date().isoformat()
+        task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": anchor}, time(0, 0))
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
+        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
+        return store, occs[0][0].id
+
+    async def test_picker_offers_durations(self, env):
+        _, occ_id = await self._occ(env)
+        f = await send(env, cb=f"snooze:{occ_id}")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert f"snz:{occ_id}:15" in flat
+        assert f"snz:{occ_id}:1440" in flat
+        # the picker itself is the interactive reply: no menu spam below it
+        assert len(f.sent) == 1
+
+    async def test_choice_snoozes_by_requested_minutes(self, env):
+        store, occ_id = await self._occ(env)
+        before = (await store.get_occurrence(occ_id))[0].reminder_at
+        f = await send(env, cb=f"snz:{occ_id}:15")
+        assert any("15 мин" in t for t in f.texts())
+        after = (await store.get_occurrence(occ_id))[0].reminder_at
+        assert after > before + timedelta(minutes=14)
+        # after a *completed* action the menu follow-up returns
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat
+
+
+class TestInteractiveStats:
+    async def _seed(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        p = (await store.list_places(user.id))[0]
+        task = await store.create_task(user.id, p.id, "дело", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1,
+                                        "anchor": datetime.now(UTC).date().isoformat()},
+                                       time(9, 0))
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 3, "UTC")
+
+    async def test_period_asked_via_buttons(self, env):
+        await self._seed(env)
+        f = await send(env, "/статистика")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert flat == ["per:week", "per:month", "per:year", "per:all"]
+        assert len(f.sent) == 1  # picker replaces the text, no double reply
+
+    async def test_period_button_shows_text_with_format_buttons(self, env):
+        await self._seed(env)
+        f = await send(env, cb="per:week")
+        assert "дело" in f.texts()[-1]
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "fmt:chart:week" in flat and "fmt:csv:week" in flat
+        assert len(f.sent) == 1
+
+    async def test_chart_sends_only_the_activity_heatmap(self, env):
+        await self._seed(env)
+        f = await send(env, cb="fmt:chart:week")
+        images = [m for m in f.sent if m.image]
+        assert len(images) == 1  # the retired daily-bar chart must not return
+        assert images[0].image.endswith(".png")
+
+    async def test_csv_button_sends_document(self, env):
+        await self._seed(env)
+        f = await send(env, cb="fmt:csv:month")
+        docs = [m for m in f.sent if m.document]
+        assert len(docs) == 1 and docs[0].document.endswith(".csv")
+
+
+class TestFollowUpSuppressed:
+    async def test_start_has_single_menu_message(self, env):
+        _, _, fake = env
+        await send(env, "/start")
+        assert len(fake.sent) == 1
+
+    async def test_reminders_status_exposes_location_frequency_button(self, env):
+        await send(env, "Дом")
+        f = await send(env, "/напоминания")
+        labels = [label for row in prev_buttons(f) for label, _ in row]
+        assert any("спрашивать о месте" in label for label in labels)

@@ -35,10 +35,12 @@ COMMANDS = {
     "отмена": "cancel", "cancel": "cancel",
 }
 
-PERIODS = {"неделя": 7, "week": 7, "месяц": 30, "month": 30,
-           "год": 365, "year": 365, "всё": None, "все": None, "all": None}
+PERIODS = {"неделя": ("week", 7), "week": ("week", 7),
+           "месяц": ("month", 30), "month": ("month", 30),
+           "год": ("year", 365), "year": ("year", 365),
+           "всё": ("all", None), "все": ("all", None), "all": ("all", None)}
 WD_KEYS = ["wd_mo", "wd_tu", "wd_we", "wd_th", "wd_fr", "wd_sa", "wd_su"]
-SNOOZE_MIN = 60
+# snooze durations offered as buttons: 15m/1h/4h/24h
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 _DT_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$")
@@ -76,12 +78,15 @@ class Ctx:
         self.messenger = messenger
         self.lang = user.language
         self.tz = ZoneInfo(settings.tz)
+        self.replied = False       # handler answered something
+        self.suppress_menu = False # answer already has interactive buttons (menu would clutter)
 
     async def reply(self, text: str, buttons: ButtonRows | None = None) -> None:
-        # plain command replies get the command menu by default, so after any
-        # finished command the buttons for the next one are right there
-        await self.messenger.send_buttons(self.account, text,
-                                          buttons or self.app._menu_rows(self.lang))
+        self.replied = True
+        if buttons:
+            await self.messenger.send_buttons(self.account, text, buttons)
+        else:
+            await self.messenger.send_text(self.account, text)
 
     async def place_buttons(self, question_key: str) -> None:
         places = await self.app.store.list_places(self.user.id)
@@ -127,6 +132,17 @@ class BotApp:
                 await self._on_text(ctx, (ev.text or "").strip())
         except Exception:
             log.exception("event handling failed: %r", ev)
+        # after a *completed* command: a short "anything else?" with the menu.
+        # Not while a wizard step is in progress, not when the answer itself
+        # carries input buttons (stats pickers, start/help).
+        if (ctx.replied and not ctx.suppress_menu
+                and not self.wizards.get(user.id)):
+            try:
+                await messenger.send_buttons(
+                    account, t("menu_ask_more", user.language),
+                    self._menu_rows(user.language))
+            except Exception:
+                log.exception("menu follow-up failed for %s", user.id)
 
     async def ensure_materialized(self, ctx: Ctx) -> None:
         today = datetime.now(ctx.tz).date()
@@ -167,17 +183,18 @@ class BotApp:
         # bare text with no places at all → treat as place name (first-run UX)
         if not await self.store.list_places(ctx.user.id):
             if await self.store.add_place(ctx.user.id, _defang(text.strip())):
-                await ctx.reply(t("place_added", ctx.lang, name=text),
-                                self._menu_rows(ctx.lang))
+                await ctx.reply(t("place_added", ctx.lang, name=text))
             return
         await ctx.reply(t("unknown_cmd", ctx.lang))
 
     # ---------- text ----------
 
     async def _cmd_start(self, ctx: Ctx, _: str) -> None:
+        ctx.suppress_menu = True
         await ctx.reply(t("greet", ctx.lang), self._menu_rows(ctx.lang))
 
     async def _cmd_help(self, ctx: Ctx, _: str) -> None:
+        ctx.suppress_menu = True
         await ctx.reply(t("help_text", ctx.lang), self._menu_rows(ctx.lang))
 
     def _menu_rows(self, lang: str) -> ButtonRows:
@@ -226,18 +243,31 @@ class BotApp:
         tasks = await self.store.list_tasks(ctx.user.id, active_only=False)
         idx = int(arg) - 1
         if 0 <= idx < len(tasks) and await self.store.delete_task(tasks[idx].id, ctx.user.id):
-            await ctx.reply(t("task_deleted", ctx.lang), self._menu_rows(ctx.lang))
+            await ctx.reply(t("task_deleted", ctx.lang))
         else:
             await ctx.reply(t("task_not_found", ctx.lang))
 
     async def _cmd_stats(self, ctx: Ctx, arg: str) -> None:
-        period, fmt = "month", "text"
+        period, fmt = None, None
         for token in arg.lower().split():
             if token in PERIODS:
                 period = token
             elif token in ("csv", "xlsx", "график", "chart"):
                 fmt = token
-        days = PERIODS[period]
+        if period is None:
+            # ask the period first: buttons, not required arguments
+            ctx.suppress_menu = True
+            await ctx.reply(t("stats_ask_period", ctx.lang), [
+                [(t("btn_per_week", ctx.lang), "per:week"),
+                 (t("btn_per_month", ctx.lang), "per:month")],
+                [(t("btn_per_year", ctx.lang), "per:year"),
+                 (t("btn_per_all", ctx.lang), "per:all")],
+            ])
+            return
+        await self._stats_show(ctx, period, fmt)
+
+    async def _stats_show(self, ctx: Ctx, period: str, fmt: str | None) -> None:
+        name, days = PERIODS[period]
         now = datetime.now(UTC)
         # +1 day so today's still-future EOD deadlines belong to the period
         end = now + timedelta(days=1)
@@ -249,11 +279,14 @@ class BotApp:
             await ctx.reply(t("stats_no_data", ctx.lang))
             return
         if fmt in ("csv", "xlsx", "график", "chart"):
-            await self._stats_file(ctx, occs, period, fmt)
-        else:
-            await ctx.reply(self._stats_text(ctx, occs, period))
-            if ctx.settings.stats_format != "text":
-                await self._stats_file(ctx, occs, period, "chart")
+            await self._stats_file(ctx, occs, name, fmt)
+            return
+        ctx.suppress_menu = True
+        await ctx.reply(self._stats_text(ctx, occs, name), [
+            [(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")],
+            [(t("btn_fmt_csv", ctx.lang), f"fmt:csv:{name}"),
+             (t("btn_fmt_xlsx", ctx.lang), f"fmt:xlsx:{name}")],
+        ])
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
         if not arg:
@@ -265,19 +298,19 @@ class BotApp:
             await ctx.reply(t("link_bad_code", ctx.lang))
             return
         if owner == ctx.user.id:
-            await ctx.reply(t("link_ok", ctx.lang), self._menu_rows(ctx.lang))
+            await ctx.reply(t("link_ok", ctx.lang))
             return
         # merge current user's data into the code owner, then move account over
         await self.store.attach_account(ctx.account, owner)
         await self.store.merge_user(ctx.user.id, owner)
-        await ctx.reply(t("link_ok", ctx.lang), self._menu_rows(ctx.lang))
+        await ctx.reply(t("link_ok", ctx.lang))
 
     async def _cmd_unlink(self, ctx: Ctx, _: str) -> None:
         accounts = await self.store.get_accounts(ctx.user.id)
         if len(accounts) < 2:
             return
         await self.store.detach_account(ctx.account.id, ctx.user.id)
-        await ctx.reply(t("unlink_done", ctx.lang), self._menu_rows(ctx.lang))
+        await ctx.reply(t("unlink_done", ctx.lang))
 
     async def _cmd_lang(self, ctx: Ctx, arg: str) -> None:
         lang = normalize(arg) if arg in ("ru", "en", "русский", "russian") else None
@@ -335,18 +368,13 @@ class BotApp:
                 export.write_xlsx(task_rows, place_rows, path)
                 await ctx.messenger.send_document(
                     ctx.account, path, "stats.xlsx", t("stats_sent_doc", ctx.lang))
-            else:  # chart
-                png = os.path.join(tmp, "stats.png")
-                produced = charts.daily_bar(days, ctx.lang, png)
-                if not produced:
+            else:  # chart: GitHub-style activity map (daily bars retired)
+                heat = os.path.join(tmp, "activity.png")
+                if not charts.github_heatmap(days, ctx.lang, heat):
                     await ctx.reply(t("stats_no_data", ctx.lang))
                     return
-                await ctx.messenger.send_image(ctx.account, produced,
-                                               t("stats_sent_doc", ctx.lang))
-                heat = os.path.join(tmp, "heatmap.png")
-                if charts.github_heatmap(days, ctx.lang, heat):
-                    await ctx.messenger.send_image(
-                        ctx.account, heat, t("stats_heat_caption", ctx.lang))
+                await ctx.messenger.send_image(
+                    ctx.account, heat, t("stats_heat_caption", ctx.lang))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -356,8 +384,7 @@ class BotApp:
         if w["kind"] == "addplace":
             if await self.store.add_place(ctx.user.id, _defang(text.strip())):
                 self.wizards.pop(ctx.user.id, None)
-                await ctx.reply(t("place_added", ctx.lang, name=text.strip()),
-                                self._menu_rows(ctx.lang))
+                await ctx.reply(t("place_added", ctx.lang, name=text.strip()))
             else:
                 await ctx.reply(t("place_exists", ctx.lang))
             return
@@ -455,8 +482,7 @@ class BotApp:
         place = await self.store.get_place(ctx.user.id, d["place_id"])
         self.wizards.pop(ctx.user.id, None)
         await ctx.reply(t("wizard_saved", ctx.lang, title=task.title,
-                          place=place.name if place else "?"),
-                        self._menu_rows(ctx.lang))
+                          place=place.name if place else "?"))
 
     # ---------- callbacks ----------
 
@@ -489,10 +515,17 @@ class BotApp:
             await self._cb_done(ctx, int(arg))
         elif action == "snooze":
             await self._cb_snooze(ctx, int(arg))
+        elif action == "snz":
+            await self._cb_snooze_set(ctx, arg)
         elif action == "lang":
             await self._set_lang(ctx, normalize(arg))
         elif action == "rem":
             await self._cb_rem(ctx, arg)
+        elif action == "per":
+            await self._stats_show(ctx, arg, None)
+        elif action == "fmt":
+            fmt, _, p = arg.partition(":")
+            await self._stats_show(ctx, p, fmt)
         elif action == "dt":
             await self._cb_date(ctx, int(arg))
         elif action == "tm":
@@ -560,8 +593,7 @@ class BotApp:
         if intent == "tasks":
             await self._send_task_list(ctx, place)
         else:
-            await ctx.reply(t("where_set", ctx.lang, name=place.name),
-                            self._menu_rows(ctx.lang))
+            await ctx.reply(t("where_set", ctx.lang, name=place.name))
         if was_pending:
             await self._digest_now(ctx.user.id, ctx.account)
 
@@ -597,16 +629,31 @@ class BotApp:
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.mark_done(occ_id, ctx.ev.platform):
-            await ctx.reply(t("msg_done", ctx.lang, title=got[1].title),
-                            self._menu_rows(ctx.lang))
+            await ctx.reply(t("msg_done", ctx.lang, title=got[1].title))
 
     async def _cb_snooze(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
+        if not got or got[1].user_id != ctx.user.id or got[0].status == "done":
+            return
+        # ask *how long*, rather than silently snoozing a fixed hour
+        ctx.suppress_menu = True
+        await ctx.reply(t("snooze_ask", ctx.lang), [
+            [(t("btn_snz_15", ctx.lang), f"snz:{occ_id}:15"),
+             (t("btn_snz_60", ctx.lang), f"snz:{occ_id}:60")],
+            [(t("btn_snz_240", ctx.lang), f"snz:{occ_id}:240"),
+             (t("btn_snz_1440", ctx.lang), f"snz:{occ_id}:1440")],
+        ])
+
+    async def _cb_snooze_set(self, ctx: Ctx, arg: str) -> None:
+        occ_id_s, _, mins = arg.partition(":")
+        if not (occ_id_s.isdigit() and mins.isdigit()):
+            return
+        got = await self.store.get_occurrence(int(occ_id_s))
         if not got or got[1].user_id != ctx.user.id:
             return
-        if await self.store.snooze(occ_id, SNOOZE_MIN):
-            await ctx.reply(t("msg_snoozed", ctx.lang, minutes=SNOOZE_MIN,
-                              title=got[1].title), self._menu_rows(ctx.lang))
+        if await self.store.snooze(int(occ_id_s), int(mins)):
+            await ctx.reply(t("msg_snoozed", ctx.lang, minutes=int(mins),
+                              title=got[1].title))
 
     # ---------- task list / digest ----------
 
@@ -625,7 +672,7 @@ class BotApp:
             lines.append(t("task_row", ctx.lang, n=i, title=task.title, due=due_local) + mark)
             rows.append([(t("btn_done", ctx.lang), f"done:{occ.id}"),
                          (t("btn_snooze", ctx.lang), f"snooze:{occ.id}")])
-        await ctx.reply("\n".join(lines), rows + self._menu_rows(ctx.lang))
+        await ctx.reply("\n".join(lines), rows)
 
     async def build_digest(self, user_id: int, settings: UserSettings, place: PlaceDC):
         """(text, buttons) for today's tasks at `place`, or None if nothing."""
