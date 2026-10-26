@@ -131,3 +131,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (squares are square) and the picture grows with the number of cells — a
   5-week map is ~509 px wide instead of 1226, a year map 2636. Narrow maps skip
   the legend, the caption already names the colors.
+- **A typed place name is a real answer**: the task wizard and the editor's
+  «Место» field accepted only the buttons below the question. With no places
+  saved the bot said «добавьте текстом, например: Дом» and then quietly swallowed
+  what was typed — the wizard just sat there. Typing now finds the place (case
+  does not matter) or creates a new one, and the question stays visible even
+  when the list is empty.
+- **A place deleted under an open wizard** used to leave the wizard about to
+  save a task pointing at a place that no longer exists (an FK error now that
+  cascades work). The step is simply asked again, then the wizard finishes where
+  it stopped.

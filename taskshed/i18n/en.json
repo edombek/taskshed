@@ -24,7 +24,7 @@
   "task_not_found": "Task not found.",
   "tasks_all_header": "All tasks ({count}):",
   "wizard_ask_title": "Task title? (or /cancel)",
-  "wizard_ask_place": "Which place does this task belong to?",
+  "wizard_ask_place": "Which place is this task for? Missing from the list? Type a new name.",
   "wizard_ask_schedule": "How often?",
   "sched_once": "One-off",
   "sched_every_n": "Every N days",

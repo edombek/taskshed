@@ -74,6 +74,28 @@ class TestOnboarding:
 
 
 class TestTaskWizard:
+    async def test_wizard_asks_again_when_its_place_vanished(self, env):
+        # a place deleted while the wizard is open must not become a dangling
+        # reference: the step is simply asked again
+        app, store, fake = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Полка")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{home}")
+        await send(env, cb="sched:every_n_days")
+        await send(env, "2")
+        await send(env, datetime.now(UTC).date().isoformat())
+        assert await store.delete_place(user.id, home)
+        f = await send(env, "09:00")  # the finish step notices the hole
+        assert "местности" in f.texts()[0]
+        assert await store.list_tasks(user.id) == []
+        f = await send(env, "Дача")   # a brand new name heals it
+        assert "добавлена" in fake.texts()[0]
+        task = (await store.list_tasks(user.id))[0]
+        assert task.place_id == await place_id_of(store, user.id, "Дача")
+
     async def test_every_n_days_flow(self, env):
         app, store, fake = env
         await send(env, "Работа")
@@ -96,6 +118,37 @@ class TestTaskWizard:
         assert len(tasks) == 1
         assert tasks[0].schedule_type == ScheduleType.EVERY_N_DAYS
         assert tasks[0].schedule_data["n"] == 3
+
+    async def test_typed_new_place_at_the_place_step_is_created(self, env):
+        # the place step used to answer only buttons: with no places saved the
+        # bot said "add one by text", then swallowed whatever was typed
+        app, store, fake = env
+        await send(env, "/задача")
+        await send(env, "Корм для кота")
+        f = await send(env, "Дом")
+        cbs = [cb for row in f.last_buttons() for _, cb in row]
+        assert "sched:once" in cbs, "the wizard must move on to the schedule"
+        user = await store.get_user_by_account("telegram", PID)
+        assert await place_id_of(store, user.id, "Дом")
+        await send(env, cb="sched:every_n_days")
+        await send(env, "2")
+        await send(env, datetime.now(UTC).date().isoformat())
+        await send(env, "09:00")
+        assert "добавлена" in fake.texts()[0]
+        task = (await store.list_tasks(user.id))[0]
+        assert task.place_id == await place_id_of(store, user.id, "Дом")
+
+    async def test_typed_existing_place_is_reused_not_duplicated(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Полка")
+        f = await send(env, "дом")  # same place, different case
+        cbs = [cb for row in f.last_buttons() for _, cb in row]
+        assert "sched:once" in cbs
+        user = await store.get_user_by_account("telegram", PID)
+        names = [p.name for p in await store.list_places(user.id)]
+        assert names == ["Дом"]
 
     async def test_weekdays_flow(self, env):
         _, store, _ = env
@@ -993,6 +1046,27 @@ class TestTaskEditor:
         occs = await store.occurrences_in_range(
             user.id, datetime.now(UTC) - timedelta(days=90), datetime.now(UTC))
         assert occs == []  # history went with it, and the user said yes to that
+
+    async def test_places_come_back_after_a_full_wipe(self, env):
+        # the owner deleted both places: the first-run UX (a bare word is a
+        # place name) must pick up again, and near-duplicates are refused
+        app, store, _ = env
+        store, user, *_ = await self._seed(env)
+        for p in await store.list_places(user.id):
+            f = await send(env, cb=f"pdel:{p.id}")
+            ok = [cb for row in (f.last_buttons() or []) for _, cb in row
+                  if cb.startswith("pdelok:")]
+            if ok:
+                await send(env, cb=ok[0])
+        assert await store.list_places(user.id) == []
+        assert await store.list_tasks(user.id, active_only=False) == []
+        f = await send(env, "Дом")
+        assert "добавлено" in f.texts()[0]
+        assert [p.name for p in await store.list_places(user.id)] == ["Дом"]
+        await send(env, "/места")
+        f = await send(env, "дом")
+        assert "уже есть" in f.texts()[0]
+        assert [p.name for p in await store.list_places(user.id)] == ["Дом"]
 
 
 class TestSavedCard:

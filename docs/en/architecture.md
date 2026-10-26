@@ -64,7 +64,7 @@ erDiagram
     users ||--o{ places : "defines"
     users |o--o| current_location : "where am I now"
     users ||--o{ tasks : "owns"
-    places ||--o{ tasks : "groups"
+    places ||--o{ tasks : "groups, delete cascades"
     tasks ||--o{ task_occurrences : "materialized repeats"
     task_occurrences |o--o| completions : "marked done"
     users ||--o{ link_codes : "one-time link codes"

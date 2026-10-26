@@ -148,7 +148,10 @@ class Ctx:
                             extra_rows: ButtonRows | None = None) -> None:
         places = await self.app.store.list_places(self.user.id)
         if not places:
-            await self.reply(t("no_places", self.lang), extra_rows or None)
+            # keep the question on screen: the wizard needs to be answerable
+            # by typing a brand new place name
+            await self.reply(f"{t(question_key, self.lang)}\n{t('no_places', self.lang)}",
+                             extra_rows or None)
             return
         rows = [[(p.name, f"place:{p.id}")] for p in places] + (extra_rows or [])
         await self.reply(t(question_key, self.lang), rows)
@@ -607,13 +610,47 @@ class BotApp:
         start = w["data"].get("start")
         return start.astimezone(ctx.tz).time() if start else time(9, 0)
 
+    async def _find_place_by_name(self, user_id: int, name: str):
+        """Existing place with this name, comparing without regard to case."""
+        if not name:
+            return None
+        for p in await self.store.list_places(user_id):
+            if p.name.casefold() == name.casefold():
+                return p
+        return None
+
+    async def _find_or_add_place(self, ctx: Ctx, name: str):
+        """Place by name, any case; a name we have not seen creates a place."""
+        found = await self._find_place_by_name(ctx.user.id, name)
+        return found or await self.store.add_place(ctx.user.id, name)
+
+    async def _place_picked(self, ctx: Ctx, w: dict, place) -> None:
+        """A place was chosen by button or by name: continue the wizard."""
+        w["data"]["place_id"] = place.id
+        if w.get("only") == "place":
+            # editor: moving the task to another place is the whole change
+            await self._wizard_finish(ctx, w, w["data"].get("rt", time(9, 0)))
+            return
+        if w.get("pending_rt") is not None:
+            # we only stopped to get a place back, the rest was already answered
+            await self._wizard_finish(ctx, w, w.pop("pending_rt"))
+            return
+        self._goto(w, "schedule")
+        await self._ask_step(ctx, w)
+
     async def _wizard_input(self, ctx: Ctx, w: dict, text: str) -> None:
         if w["kind"] == "addplace":
-            if await self.store.add_place(ctx.user.id, _defang(text.strip())):
-                self.wizards.pop(ctx.user.id, None)
-                await ctx.reply(t("place_added", ctx.lang, name=text.strip()))
-            else:
+            wanted = _defang(text.strip())[:80]
+            if await self._find_place_by_name(ctx.user.id, wanted):
                 await ctx.reply(t("place_exists", ctx.lang))
+                return
+            place = await self.store.add_place(ctx.user.id, wanted)
+            if place is None:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("no_places", ctx.lang)))
+                return
+            self.wizards.pop(ctx.user.id, None)
+            await ctx.reply(t("place_added", ctx.lang, name=place.name))
             return
         if w["kind"] != "task":
             self.wizards.pop(ctx.user.id, None)
@@ -627,6 +664,17 @@ class BotApp:
                 return
             self._goto(w, "place")
             await self._ask_step(ctx, w)
+        elif step == "place":
+            # typing is a first-class answer here: with no places saved the bot
+            # literally says "add one by text", and a new name is how the place
+            # for this task gets born
+            name = _defang(text.strip())[:80]
+            place = await self._find_or_add_place(ctx, name)
+            if place is None:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("wizard_ask_place", ctx.lang)))
+                return
+            await self._place_picked(ctx, w, place)
         elif step == "n":
             if not text.lstrip("-").isdigit() or int(text) <= 0:
                 await ctx.reply(t("wizard_bad_input", ctx.lang, hint=t("wizard_ask_n", ctx.lang)))
@@ -739,32 +787,6 @@ class BotApp:
         self._goto(w, "reminder")
         await self._ask_step(ctx, w)
 
-    async def _wizard_finish(self, ctx: Ctx, w: dict, rt: time) -> None:
-        d = w["data"]
-        stype = d["stype"]
-        sdata: dict = {}
-        deadline = None
-        start_at = None
-        if stype == "once":
-            deadline = d["deadline"]
-            start_at = d["start"]
-        elif stype == "every_n_days":
-            sdata = {"n": d["n"], "anchor": d["anchor"]}
-        elif stype == "weekdays":
-            sdata = {"weekdays": sorted(w["days"])}
-        elif stype == "monthly_day":
-            sdata = {"day": d["day"]}
-        task = await self.store.create_task(
-            ctx.user.id, d["place_id"], d["title"], stype, sdata, rt, deadline,
-            start_at=start_at,
-        )
-        await self.store.materialize_occurrences(
-            task, datetime.now(ctx.tz).date(), self.cfg.occurrence_horizon_days, ctx.settings.tz,
-        )
-        place = await self.store.get_place(ctx.user.id, d["place_id"])
-        self.wizards.pop(ctx.user.id, None)
-        await ctx.reply(await self._saved_card(ctx, task, place))
-
     def _wizard_task_fields(self, w: dict) -> tuple[str, dict, datetime | None,
                                                      datetime | None]:
         """(schedule type, its data, ready-by moment, start) from wizard data."""
@@ -787,6 +809,14 @@ class BotApp:
             await self._wizard_update(ctx, w, rt)
             return
         d = w["data"]
+        if await self.store.get_place(ctx.user.id, d.get("place_id") or 0) is None:
+            # the place went away while this wizard was open (deleted from
+            # another screen): ask again instead of writing a dangling FK
+            d["place_id"] = None
+            w["pending_rt"] = rt
+            w["step"] = "place"
+            await self._ask_step(ctx, w)
+            return
         stype, sdata, deadline, start_at = self._wizard_task_fields(w)
         task = await self.store.create_task(
             ctx.user.id, d["place_id"], d["title"], stype, sdata, rt, deadline,
@@ -812,8 +842,16 @@ class BotApp:
             await ctx.reply(t("task_not_found", ctx.lang))
             return
         stype, sdata, deadline, start_at = self._wizard_task_fields(w)
+        place_id = int(w["data"].get("place_id") or task.place_id)
+        if await self.store.get_place(ctx.user.id, place_id) is None:
+            # someone deleted the place while this edit dialog was open
+            w["data"]["place_id"] = None
+            w["pending_rt"] = rt
+            w["step"] = "place"
+            await self._ask_step(ctx, w)
+            return
         task.title = w["data"].get("title", task.title)
-        task.place_id = w["data"].get("place_id", task.place_id)
+        task.place_id = place_id
         task.schedule_type = ScheduleType(stype)
         task.schedule_data = sdata
         task.reminder_time = rt
@@ -1108,6 +1146,7 @@ class BotApp:
             if not w or w.get("kind") != "task" or not w.get("hist"):
                 return
             w["step"] = w["hist"].pop()
+            w.pop("pending_rt", None)  # walking back drops an interrupted finish
             await self._ask_step(ctx, w)
         elif action == "wz" and arg == "cancel":
             # ✖ Отмена on the first wizard step (typing /отмена also works)
@@ -1196,13 +1235,7 @@ class BotApp:
             return
         w = self.wizards.get(ctx.user.id)
         if w and w.get("kind") == "task" and w.get("step") == "place":
-            w["data"]["place_id"] = place.id
-            if w.get("only") == "place":
-                # editor: moving the task to another place is the whole change
-                await self._wizard_finish(ctx, w, w["data"].get("rt", time(9, 0)))
-                return
-            self._goto(w, "schedule")
-            await self._ask_step(ctx, w)
+            await self._place_picked(ctx, w, place)
             return
         await self.store.set_location(ctx.user.id, place.id)
         was_pending = ctx.settings.pending_reminder

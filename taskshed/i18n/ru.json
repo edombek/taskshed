@@ -24,7 +24,7 @@
   "task_not_found": "Задача не найдена.",
   "tasks_all_header": "Все задачи ({count}):",
   "wizard_ask_title": "Название задачи? (или /отмена)",
-  "wizard_ask_place": "К какой местности относится задача?",
+  "wizard_ask_place": "К какой местности относится задача? Нет в списке — наберите название.",
   "wizard_ask_schedule": "Как часто?",
   "sched_once": "Разово",
   "sched_every_n": "Каждые N дней",

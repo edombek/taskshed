@@ -12,7 +12,9 @@ platform-independent core.
 
 ## Features
 
-- Tasks split by **places** you define yourself (`/places`).
+- Tasks split by **places** you define yourself (`/places`) — or typed straight
+  into the task wizard, which creates them. Deleting a place asks first: its
+  tasks and their history go with it.
 - Schedules: one-off tasks with a **start and a ready-by deadline** (they can
   be moved to ▶ in progress — started work is never counted as missed), every
   N days, specific weekdays, day of month; every repeat is a materialized

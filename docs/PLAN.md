@@ -128,6 +128,8 @@ Checklist of the implementation roadmap. EN summary in
       wizard step suppresses it); place deletion confirms with the task count
 - [x] Chart figures sized from the grid (equal unit on both axes, size grows
       with the number of cells; legend only on wide maps)
+- [x] Place names typed into the task wizard create/reuse the place (case
+      blind); a place deleted mid-wizard is asked for again, no dangling FK
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
