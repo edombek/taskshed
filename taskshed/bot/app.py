@@ -243,16 +243,17 @@ class BotApp:
         end = now + timedelta(days=1)
         start = (end - timedelta(days=days)) if days else datetime(2000, 1, 1, tzinfo=UTC)
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
-        past = [(o, task) for o, task in occs if o.due_at <= now or o.status == "done"]
-        if not past:
+        # planned (future) occurrences are kept on purpose: they show as
+        # pending/«в плане» in reports and as blue insets on the heatmap
+        if not occs:
             await ctx.reply(t("stats_no_data", ctx.lang))
             return
         if fmt in ("csv", "xlsx", "график", "chart"):
-            await self._stats_file(ctx, past, period, fmt)
+            await self._stats_file(ctx, occs, period, fmt)
         else:
-            await ctx.reply(self._stats_text(ctx, past, period))
+            await ctx.reply(self._stats_text(ctx, occs, period))
             if ctx.settings.stats_format != "text":
-                await self._stats_file(ctx, past, period, "chart")
+                await self._stats_file(ctx, occs, period, "chart")
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
         if not arg:

@@ -5,6 +5,10 @@ Rules (fixed by the design contract):
 2. no occurrences due today (any place)                     -> silent
 3. current location stale or unset                          -> ask where (once)
 4. no occurrences for the current place                     -> silent
+
+The trigger moment is either the global settings moment (times/interval mode)
+or a task's own reminder time (`task_occurrences.reminder_at`) that has been
+reached and not covered yet by `last_reminded_at`.
 """
 
 from __future__ import annotations
@@ -74,13 +78,21 @@ async def _tick_user(app: BotApp, store: Store, user_id: int, now: datetime) -> 
     for task in await store.list_tasks(user_id):
         await store.materialize_occurrences(task, today, horizon, settings.tz)
 
-    if not _trigger_due(settings, now, tz):
+    today_occs = await store.occurrences_today(user_id, today, settings.tz)
+    if not today_occs:
+        return  # rule 2: nothing today — fully silent
+
+    # a task's own reminder time (or snooze) that we haven't covered yet
+    per_task_due = any(
+        o.status == "pending" and o.reminder_at <= now
+        and (settings.last_reminded_at is None
+             or settings.last_reminded_at < o.reminder_at)
+        for o, _ in today_occs
+    )
+    if not (_trigger_due(settings, now, tz) or per_task_due):
         return
     if _in_quiet(now.astimezone(tz).time(), settings.quiet_start, settings.quiet_end):
         return
-
-    if not await store.occurrences_today(user_id, today, settings.tz):
-        return  # rule 2: nothing today — fully silent
 
     loc = await store.get_location(user_id)
     fresh = loc is not None and (now - loc[1]).total_seconds() <= settings.location_ttl_hours * 3600

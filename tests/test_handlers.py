@@ -344,3 +344,17 @@ class TestMenuAfterCommand:
         await send(env, "15")
         await send(env, "09:00")
         await self._menu_on_last(env)
+
+
+class TestStatsIncludePlanned:
+    async def test_future_task_appears_in_stats(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        p = (await store.list_places(user.id))[0]
+        future = datetime.now(UTC) + timedelta(hours=20)  # inside the stats window
+        task = await store.create_task(user.id, p.id, "запланировано", ScheduleType.ONCE,
+                                       {}, time(9, 0), deadline=future)
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 8, "UTC")
+        f = await send(env, "/статистика всё")
+        assert "запланировано" in f.texts()[-1]

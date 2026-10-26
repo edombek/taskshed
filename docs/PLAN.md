@@ -72,6 +72,9 @@ Checklist of the implementation roadmap. EN summary in
       always covers at least the last month (empty days drawn gray)
 - [x] Command menu attached to completion replies (task saved, ✅ done,
       snooze, place set, delete, link/unlink)
+- [x] Scheduler honors per-task `reminder_at` (and snooze), not just the
+      global digest moment; stats keep planned occurrences in reports and
+      on the heatmap; live user tz corrected to Europe/Moscow
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

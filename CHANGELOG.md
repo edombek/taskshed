@@ -32,4 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   GitHub-style activity heatmap with per-day missed/planned sub-markers;
   command menu re-attached to completion replies (task saved, done,
   snooze, place set, delete, link/unlink); heatmap window always covers
-  at least the last month even when records are sparse.
+  at least the last month even when records are sparse; scheduler now
+  honors each task's own reminder time (`reminder_at`, incl. snooze) in
+  addition to the global digest moment; statistics reports/heatmap keep
+  planned (future) occurrences instead of filtering them out.
