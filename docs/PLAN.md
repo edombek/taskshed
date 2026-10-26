@@ -54,9 +54,9 @@ Checklist of the implementation roadmap. EN summary in
 
 ## Stage 7 — Real-world verification 🚧
 - [x] `config.yaml` filled: Telegram token + local MTProxy (`127.0.0.1:8888`)
-- [ ] Alembic `upgrade head` on the real file DB (`taskshed.db`)
-- [ ] Telegram smoke: bot connects through the proxy, `/start` replies
-- [ ] Telegram chat flow: places → tasks → digest → ✅ → stats
+- [x] Alembic `upgrade head` on the real file DB (`taskshed.db`, head `b5c04a0c009c`)
+- [x] Telegram smoke: bot connects through the proxy (`start(bot_token=…)`, Telethon 1.45)
+- [ ] Telegram chat flow: places → tasks → digest → ✅ → stats (interactive)
 - [ ] VK: real community token + `group_id` (placeholders removed), enable
 - [ ] VK smoke: long poll connects, `/старт` replies
 - [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
