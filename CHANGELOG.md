@@ -54,4 +54,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   returns to the main menu instead of the "anything else?" follow-up; the
   wizard's reminder time is picked via buttons (the "press Enter for the
   default" was impossible in Telegram); time input accepts `11 55`, `11.55`
-  and `11-55` as well as `11:55`.
+  and `11-55` as well as `11:55`; every wizard step carries an ⬅️ Назад
+  button to redo the previous answer; dates accept `15.11.2026`, `15/11/26`,
+  `15 11 2026`, `15.11` (rolls forward), `завтра`/`tomorrow`, and a
+  date-only answer proceeds to time buttons; new **⏭ Пропустить** button in
+  task lists/digests closes today's occurrence without a missed penalty —
+  skipped shows up in the text report, CSV/XLSX columns and an orange
+  heatmap inset, and never counts against the completion percent.

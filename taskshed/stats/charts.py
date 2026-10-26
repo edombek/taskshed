@@ -18,10 +18,12 @@ COLOR_PENDING = "#95a5a6"
 HEAT_GREENS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
 HEAT_MISSED = "#d73027"
 HEAT_PENDING = "#4a90d9"
+HEAT_SKIPPED = "#e08214"
 
 
 def _legend(lang: str):
-    return (t("w_done", lang), t("w_missed", lang), t("w_pending", lang))
+    return (t("w_done", lang), t("w_missed", lang), t("w_pending", lang),
+            t("w_skipped", lang))
 
 
 def daily_bar(days: dict[date, dict], lang: str, out_path: str) -> str:
@@ -135,6 +137,10 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                 ax.add_patch(mpatches.Rectangle((wi + 0.5, row + 0.5), 0.36,
                                                 0.36, facecolor=HEAT_PENDING,
                                                 edgecolor="none"))
+            if int(agg.get("skipped", 0)):
+                ax.add_patch(mpatches.Rectangle((wi, row + 0.5), 0.36, 0.36,
+                                                facecolor=HEAT_SKIPPED,
+                                                edgecolor="none"))
             d += timedelta(days=1)
 
     # month labels above the column where a month first appears
@@ -163,8 +169,11 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         Line2D([0], [0], marker="s", linestyle="none", markersize=7,
                markerfacecolor=HEAT_PENDING, markeredgecolor="none",
                label=_legend(lang)[2]),
+        Line2D([0], [0], marker="s", linestyle="none", markersize=7,
+               markerfacecolor=HEAT_SKIPPED, markeredgecolor="none",
+               label=_legend(lang)[3]),
     ]
-    ax.legend(handles=handles, loc="lower right", fontsize=7, ncols=3,
+    ax.legend(handles=handles, loc="lower right", fontsize=7, ncols=4,
               frameon=False, bbox_to_anchor=(1.0, -0.12))
     ax.set_title(t("chart_heat", lang), fontsize=9)
     fig.tight_layout()

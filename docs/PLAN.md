@@ -89,6 +89,12 @@ Checklist of the implementation roadmap. EN summary in
       get an ⬅️ Назад button back to the main menu, no menu follow-up there
 - [x] Wizard reminder time as buttons (⏎ 09:00 default); flexible time
       parsing: `11 55` / `11.55` / `11-55` / `11:55`
+- [x] ⬅️ Назад on every wizard step (redoes the previous answer)
+- [x] Flexible date parsing: `15.11.2026`, `15/11/26`, `15 11 2026`,
+      `15.11` (next occurrence), `завтра`/`tomorrow`; date-only → time buttons
+- [x] ⏭ Пропустить: closes an occurrence as `skipped` (no missed penalty,
+      hidden from today's list, tracked separately in reports/heatmap,
+      excluded from completion percent)
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

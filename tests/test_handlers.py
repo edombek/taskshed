@@ -1,7 +1,7 @@
 """Chat logic end-to-end through BotApp + FakeMessenger (no network)."""
 
 import re
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 
@@ -548,3 +548,99 @@ class TestWizardReminderButtons:
         assert fake.find("добавлена")
         tasks = await store.list_tasks(user.id)
         assert tasks and tasks[0].reminder_time == time(12, 30)
+
+
+class TestSkipOccurrence:
+    async def _occ(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        p = (await store.list_places(user.id))[0]
+        await store.set_location(user.id, p.id)
+        anchor = datetime.now(UTC).date().isoformat()
+        task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": anchor}, time(9, 0))
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
+        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
+        return store, occs[0][0].id
+
+    async def test_skip_closes_occurrence_without_missed(self, env):
+        store, occ_id = await self._occ(env)
+        f = await send(env, "/задачи")
+        flat = [cb for row in prev_buttons(f) for _, cb in row]
+        assert f"skip:{occ_id}" in flat
+        f = await send(env, cb=f"skip:{occ_id}")
+        assert f.find("Пропущено")
+        occ, _ = await store.get_occurrence(occ_id)
+        assert occ.status == "skipped"
+        # gone from today's list, and the background overdue pass ignores it
+        assert not await store.occurrences_today(
+            (await store.get_user_by_account("telegram", PID)).id,
+            datetime.now(UTC).date(), "UTC")
+        await store.mark_overdue(datetime.now(UTC) + timedelta(days=1))
+        assert (await store.get_occurrence(occ_id))[0].status == "skipped"
+
+    async def test_skipped_shows_in_stats_not_as_missed(self, env):
+        store, occ_id = await self._occ(env)
+        await send(env, cb=f"skip:{occ_id}")
+        f = await send(env, "/статистика всё")
+        assert "пропущено 1" in f.texts()[-1]
+        assert "просрочено 0" in f.texts()[-1]
+
+
+class TestFlexibleDates:
+    @pytest.mark.parametrize(("typed", "want"), [
+        ("2026-11-15", date(2026, 11, 15)),
+        ("15.11.2026", date(2026, 11, 15)),
+        ("15/11/2026", date(2026, 11, 15)),
+        ("15 11 2026", date(2026, 11, 15)),
+        ("15.11.26", date(2026, 11, 15)),
+    ])
+    def test_full_dates(self, typed, want):
+        from taskshed.bot.app import _parse_date
+        assert _parse_date(typed, date(2026, 10, 26)) == want
+
+    def test_short_rolls_forward(self):
+        from taskshed.bot.app import _parse_date
+        assert _parse_date("15.11", date(2026, 10, 26)) == date(2026, 11, 15)
+        assert _parse_date("15.02", date(2026, 10, 26)) == date(2027, 2, 15)
+
+    def test_words(self):
+        from taskshed.bot.app import _parse_date
+        assert _parse_date("завтра", date(2026, 10, 26)) == date(2026, 10, 27)
+        assert _parse_date("Today", date(2026, 10, 26)) == date(2026, 10, 26)
+
+    @pytest.mark.parametrize("typed", ["15.13.2026", "32.11.2026", "abc", "2026-11"])
+    def test_rejects_garbage(self, typed):
+        from taskshed.bot.app import _parse_date
+        assert _parse_date(typed, date(2026, 10, 26)) is None
+
+
+class TestWizardBackAndFlexDates:
+    async def _start(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, "/задача")
+        await send(env, "первое название")
+        return app, store, fake, user, pid
+
+    async def test_back_redoes_previous_question(self, env):
+        _, store, fake, user, pid = await self._start(env)
+        f = await send(env, cb="wz:back")  # from place back to title
+        assert "Название задачи" in f.texts()[-1]
+        f = await send(env, "второе название")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert f"place:{pid}" in flat and "wz:back" in flat
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:every_n_days")
+        await send(env, "3")
+        await send(env, "завтра")  # anchor as a word
+        f = await send(env, cb="tm:09:00")
+        assert fake.find("добавлена")
+        tasks = await store.list_tasks(user.id)
+        assert tasks[0].title == "второе название"
+        assert tasks[0].schedule_data["n"] == 3
+        tomorrow = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
+        assert tasks[0].schedule_data["anchor"] == tomorrow

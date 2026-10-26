@@ -19,6 +19,8 @@
   "task_paused_mark": " ⏸",
   "btn_done": "✅ Done",
   "btn_snooze": "⏭ Postpone",
+  "btn_skip": "⏭ Skip",
+  "msg_skipped": "Skipped: “{title}” (not missed)",
   "msg_done": "Done: “{title}” ✅",
   "msg_snoozed": "Postponed by {minutes} min: “{title}”",
   "task_deleted": "Task deleted.",
@@ -33,12 +35,12 @@
   "sched_weekdays": "Weekdays",
   "sched_monthly": "Day of month",
   "wizard_ask_n": "Every how many days?",
-  "wizard_ask_anchor_date": "Start counting from which date? (YYYY-MM-DD or tap a button)",
+  "wizard_ask_anchor_date": "Start counting from which date? (e.g. 2026-11-15, “tomorrow” or tap a button)",
   "wizard_ask_days": "Pick weekdays with buttons, then “Done”.",
   "wd_mo": "Mo", "wd_tu": "Tu", "wd_we": "We", "wd_th": "Th",
   "wd_fr": "Fr", "wd_sa": "Sa", "wd_su": "Su", "wd_done": "Done",
   "wizard_ask_month_day": "Which day of the month? (1–31)",
-  "wizard_ask_when": "Which date and time? (YYYY-MM-DD HH:MM)",
+  "wizard_ask_when": "Which date and time? (e.g. 2026-11-15 14:30, or date only + button)",
   "wizard_ask_reminder": "Remind at what time? (HH:MM, or tap a button)",
   "wizard_saved": "Task “{title}” added to “{place}”.",
   "wizard_cancelled": "Cancelled.",
@@ -56,7 +58,7 @@
   "rem_updated": "Saved.\n{status}",
 
   "stats_header": "📊 Statistics ({period}):",
-  "stats_row": "{title}: done {done} / missed {missed} / total {total} ({percent}%)",
+  "stats_row": "{title}: done {done} / missed {missed} / skipped {skipped} / total {total} ({percent}%)",
   "stats_no_data": "No occurrences in this period.",
   "period_week": "week", "period_month": "month", "period_year": "year", "period_all": "all time",
   "stats_sent_doc": "Statistics file.",
@@ -105,5 +107,6 @@
   "chart_top": "Top tasks (completion rate, %)",
   "chart_trend": "Weekly completion trend",
   "chart_heat": "Calendar",
-  "w_done": "done", "w_missed": "missed", "w_pending": "pending"
+  "w_done": "done", "w_missed": "missed", "w_pending": "pending",
+  "w_skipped": "skipped"
 }

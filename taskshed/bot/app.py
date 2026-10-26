@@ -40,10 +40,18 @@ PERIODS = {"неделя": ("week", 7), "week": ("week", 7),
            "год": ("year", 365), "year": ("year", 365),
            "всё": ("all", None), "все": ("all", None), "all": ("all", None)}
 WD_KEYS = ["wd_mo", "wd_tu", "wd_we", "wd_th", "wd_fr", "wd_sa", "wd_su"]
+# time presets offered as inline buttons (Telegram cannot send an empty
+# message, so the 09:00 default reminder gets a ⏎ button instead)
+TM_PRESETS = [[("08:00", "tm:08:00"), ("12:00", "tm:12:00"), ("15:00", "tm:15:00")],
+              [("18:00", "tm:18:00"), ("21:00", "tm:21:00"), ("23:59", "tm:23:59")]]
+REMINDER_TMS = [[("⏎ 09:00", "tm:09:00")],
+                [("08:00", "tm:08:00"), ("12:00", "tm:12:00")],
+                [("18:00", "tm:18:00"), ("21:00", "tm:21:00")]]
 # snooze durations offered as buttons: 15m/1h/4h/24h
 
 _TIME_RE = re.compile(r"^(\d{1,2})\s*[:.,\-\s]\s*(\d{1,2})$")
-_DT_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$")
+_DATE_FULL_RE = re.compile(r"^(\d{1,4})[ ./-]+(\d{1,2})[ ./-]+(\d{2,4})$")
+_DATE_SHORT_RE = re.compile(r"^(\d{1,2})[ ./-]+(\d{1,2})$")
 
 # URLs are defanged in user-supplied strings (task titles, place names):
 # a bot that sends clickable links can get flagged and banned by Telegram.
@@ -68,6 +76,48 @@ def _parse_hhmm(s: str) -> time | None:
     return time(h, mi) if 0 <= h < 24 and 0 <= mi < 60 else None
 
 
+def _parse_date(s: str, today: date) -> date | None:
+    """Flexibly parse a typed date: 2026-11-15, 15.11.2026, 15/11/26,
+    '15 11 2026', 15.11, and the words today/tomorrow (ru+en). Day comes
+    first unless the year does; a year-less date rolls forward."""
+    s = s.strip().lower()
+    if s in ("сегодня", "today"):
+        return today
+    if s in ("завтра", "tomorrow"):
+        return today + timedelta(days=1)
+    m = _DATE_FULL_RE.match(s)
+    short = False
+    if m:
+        a, b, c = (int(g) for g in m.groups())
+        if a > 31:  # YYYY-MM-DD
+            y, mo, d = a, b, c
+        else:  # DD.MM.YYYY / DD.MM.YY (day-first, the RU habit)
+            d, mo, y = a, b, (2000 + c if c < 100 else c)
+    else:
+        m = _DATE_SHORT_RE.match(s)
+        if not m:
+            return None
+        d, mo, y, short = int(m.group(1)), int(m.group(2)), today.year, True
+    try:
+        got = date(y, mo, d)
+    except ValueError:
+        return None
+    if short and got < today:
+        try:
+            got = date(y + 1, mo, d)
+        except ValueError:
+            return None
+    return got
+
+
+def _split_date_time(s: str) -> tuple[str, str | None]:
+    """Split typed 'DATE TIME'; the time may itself use dots ('14.30')."""
+    parts = s.strip().split()
+    if len(parts) >= 2 and _parse_hhmm(parts[-1]) is not None:
+        return " ".join(parts[:-1]), parts[-1]
+    return s.strip(), None
+
+
 class Ctx:
     """Per-event context passed to all handlers."""
 
@@ -88,12 +138,13 @@ class Ctx:
         else:
             await self.messenger.send_text(self.account, text)
 
-    async def place_buttons(self, question_key: str) -> None:
+    async def place_buttons(self, question_key: str,
+                            extra_rows: ButtonRows | None = None) -> None:
         places = await self.app.store.list_places(self.user.id)
         if not places:
             await self.reply(t("no_places", self.lang))
             return
-        rows = [[(p.name, f"place:{p.id}")] for p in places]
+        rows = [[(p.name, f"place:{p.id}")] for p in places] + (extra_rows or [])
         await self.reply(t(question_key, self.lang), rows)
 
 
@@ -339,17 +390,22 @@ class BotApp:
     def _stats_text(self, ctx: Ctx, past, period: str) -> str:
         agg: dict[int, dict] = {}
         for occ, task in past:
-            a = agg.setdefault(task.id, {"title": task.title, "done": 0, "missed": 0, "total": 0})
+            a = agg.setdefault(task.id, {"title": task.title, "done": 0,
+                                         "missed": 0, "skipped": 0, "total": 0})
             a["total"] += 1
             if occ.status == "done":
                 a["done"] += 1
             elif occ.status == "missed":
                 a["missed"] += 1
+            elif occ.status == "skipped":
+                a["skipped"] += 1
         lines = [t("stats_header", ctx.lang, period=t(f"period_{period}", ctx.lang))]
         for a in agg.values():
-            pct = round(100 * a["done"] / a["total"]) if a["total"] else 0
+            base = a["total"] - a["skipped"]
+            pct = round(100 * a["done"] / base) if base else 0
             lines.append(t("stats_row", ctx.lang, title=a["title"], done=a["done"],
-                           missed=a["missed"], total=a["total"], percent=pct))
+                           missed=a["missed"], skipped=a["skipped"],
+                           total=a["total"], percent=pct))
         return "\n".join(lines)
 
     async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str) -> None:
@@ -388,6 +444,47 @@ class BotApp:
 
     # ---------- wizard ----------
 
+    def _goto(self, w: dict, step: str) -> None:
+        """Advance the wizard, remembering where we came from (⬅️ Назад)."""
+        w.setdefault("hist", []).append(w["step"])
+        w["step"] = step
+
+    def _back_row(self, ctx: Ctx, w: dict) -> ButtonRows:
+        return [[(t("btn_back", ctx.lang), "wz:back")]] if w.get("hist") else []
+
+    async def _ask_step(self, ctx: Ctx, w: dict) -> None:
+        """Ask (or re-ask after Назад) the question for the current step."""
+        step, back = w["step"], self._back_row(ctx, w)
+        if step == "title":
+            await ctx.reply(t("wizard_ask_title", ctx.lang), back or None)
+        elif step == "place":
+            await ctx.place_buttons("wizard_ask_place", back)
+        elif step == "schedule":
+            await ctx.reply(t("wizard_ask_schedule", ctx.lang), [
+                [(t("sched_once", ctx.lang), "sched:once"),
+                 (t("sched_every_n", ctx.lang), "sched:every_n_days")],
+                [(t("sched_weekdays", ctx.lang), "sched:weekdays"),
+                 (t("sched_monthly", ctx.lang), "sched:monthly_day")]] + back)
+        elif step == "when":
+            await ctx.reply(t("wizard_ask_when", ctx.lang), [
+                [(t("btn_today", ctx.lang), "dt:0"),
+                 (t("btn_tomorrow", ctx.lang), "dt:1"),
+                 (t("btn_in_2_days", ctx.lang), "dt:2")]] + back)
+        elif step == "whentime":
+            await ctx.reply(t("wizard_ask_time", ctx.lang), TM_PRESETS + back)
+        elif step == "anchor":
+            await ctx.reply(t("wizard_ask_anchor_date", ctx.lang), [
+                [(t("btn_today", ctx.lang), "dt:0"),
+                 (t("btn_tomorrow", ctx.lang), "dt:1")]] + back)
+        elif step == "n":
+            await ctx.reply(t("wizard_ask_n", ctx.lang), back or None)
+        elif step == "monthday":
+            await ctx.reply(t("wizard_ask_month_day", ctx.lang), back or None)
+        elif step == "days":
+            await self._wd_buttons(ctx, w)
+        elif step == "reminder":
+            await ctx.reply(t("wizard_ask_reminder", ctx.lang), REMINDER_TMS + back)
+
     async def _wizard_input(self, ctx: Ctx, w: dict, text: str) -> None:
         if w["kind"] == "addplace":
             if await self.store.add_place(ctx.user.id, _defang(text.strip())):
@@ -402,27 +499,23 @@ class BotApp:
         step = w["step"]
         if step == "title":
             w["data"]["title"] = _defang(text.strip())[:200]
-            w["step"] = "place"
-            await ctx.place_buttons("wizard_ask_place")
+            self._goto(w, "place")
+            await self._ask_step(ctx, w)
         elif step == "n":
             if not text.lstrip("-").isdigit() or int(text) <= 0:
                 await ctx.reply(t("wizard_bad_input", ctx.lang, hint=t("wizard_ask_n", ctx.lang)))
                 return
             w["data"]["n"] = int(text)
-            w["step"] = "anchor"
-            await ctx.reply(t("wizard_ask_anchor_date", ctx.lang), [
-                [(t("btn_today", ctx.lang), "dt:0"),
-                 (t("btn_tomorrow", ctx.lang), "dt:1")],
-            ])
+            self._goto(w, "anchor")
+            await self._ask_step(ctx, w)
         elif step == "anchor":
-            anchor = text.strip() or datetime.now(ctx.tz).date().isoformat()
-            try:
-                datetime.strptime(anchor, "%Y-%m-%d")
-            except ValueError:
+            today = datetime.now(ctx.tz).date()
+            anchor = _parse_date(text, today) if text.strip() else today
+            if anchor is None:
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
                                   hint=t("wizard_ask_anchor_date", ctx.lang)))
                 return
-            w["data"]["anchor"] = anchor
+            w["data"]["anchor"] = anchor.isoformat()
             await self._wizard_ask_reminder(ctx, w)
         elif step == "monthday":
             if not text.isdigit() or not 1 <= int(text) <= 31:
@@ -432,17 +525,21 @@ class BotApp:
             w["data"]["day"] = int(text)
             await self._wizard_ask_reminder(ctx, w)
         elif step == "when":
-            m = _DT_RE.match(text.strip())
             hint = t("wizard_ask_when", ctx.lang)
-            if not m:
+            dpart, tsrc = _split_date_time(text)
+            d = _parse_date(dpart, datetime.now(ctx.tz).date())
+            tval = _parse_hhmm(tsrc) if tsrc else None
+            if d is None or (tsrc is not None and tval is None):
                 await ctx.reply(t("wizard_bad_input", ctx.lang, hint=hint))
                 return
-            y, mo, d, h, mi = (int(g) for g in m.groups())
-            try:
-                deadline = datetime(y, mo, d, h, mi, tzinfo=ctx.tz)
-            except ValueError:
-                await ctx.reply(t("wizard_bad_input", ctx.lang, hint=hint))
+            if tval is None:
+                # date only: remember it, ask the time the usual way
+                w["data"]["picked_date"] = d
+                self._goto(w, "whentime")
+                await self._ask_step(ctx, w)
                 return
+            deadline = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
+                                tzinfo=ctx.tz)
             # guards the "2016 instead of 2026" typo: a once-task due before
             # today would materialize nothing and silently never show up
             if deadline.date() < datetime.now(ctx.tz).date():
@@ -465,14 +562,8 @@ class BotApp:
             await self._wizard_finish(ctx, w, rt)
 
     async def _wizard_ask_reminder(self, ctx: Ctx, w: dict) -> None:
-        w["step"] = "reminder"
-        # Telegram cannot send an empty message, so the 09:00 default gets a
-        # button instead of the impossible "press Enter" hint
-        await ctx.reply(t("wizard_ask_reminder", ctx.lang), [
-            [("⏎ 09:00", "tm:09:00")],
-            [("08:00", "tm:08:00"), ("12:00", "tm:12:00")],
-            [("18:00", "tm:18:00"), ("21:00", "tm:21:00")],
-        ])
+        self._goto(w, "reminder")
+        await self._ask_step(ctx, w)
 
     async def _wizard_finish(self, ctx: Ctx, w: dict, rt: time) -> None:
         d = w["data"]
@@ -529,6 +620,8 @@ class BotApp:
             await self._cb_done(ctx, int(arg))
         elif action == "snooze":
             await self._cb_snooze(ctx, int(arg))
+        elif action == "skip":
+            await self._cb_skip(ctx, int(arg))
         elif action == "snz":
             await self._cb_snooze_set(ctx, arg)
         elif action == "lang":
@@ -544,6 +637,13 @@ class BotApp:
             await self._cb_date(ctx, int(arg))
         elif action == "tm":
             await self._cb_time(ctx, arg)
+        elif action == "wz" and arg == "back":
+            # ⬅️ Назад inside the task wizard: redo the previous question
+            w = self.wizards.get(ctx.user.id)
+            if not w or w.get("kind") != "task" or not w.get("hist"):
+                return
+            w["step"] = w["hist"].pop()
+            await self._ask_step(ctx, w)
         elif action == "menu" and arg == "back":
             # submenu screens offer ⬅️ Назад: return to the main command menu
             if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
@@ -563,11 +663,8 @@ class BotApp:
             await self._wizard_ask_reminder(ctx, w)
             return
         w["data"]["picked_date"] = d
-        w["step"] = "whentime"
-        await ctx.reply(t("wizard_ask_time", ctx.lang), [
-            [("08:00", "tm:08:00"), ("12:00", "tm:12:00"), ("15:00", "tm:15:00")],
-            [("18:00", "tm:18:00"), ("21:00", "tm:21:00"), ("23:59", "tm:23:59")],
-        ])
+        self._goto(w, "whentime")
+        await self._ask_step(ctx, w)
 
     async def _cb_time(self, ctx: Ctx, arg: str) -> None:
         """Time picked via buttons (deadline step or reminder-time step)."""
@@ -604,13 +701,8 @@ class BotApp:
         w = self.wizards.get(ctx.user.id)
         if w and w.get("kind") == "task" and w.get("step") == "place":
             w["data"]["place_id"] = place.id
-            w["step"] = "schedule"
-            await ctx.reply(t("wizard_ask_schedule", ctx.lang), [
-                [(t("sched_once", ctx.lang), "sched:once"),
-                 (t("sched_every_n", ctx.lang), "sched:every_n_days")],
-                [(t("sched_weekdays", ctx.lang), "sched:weekdays"),
-                 (t("sched_monthly", ctx.lang), "sched:monthly_day")],
-            ])
+            self._goto(w, "schedule")
+            await self._ask_step(ctx, w)
             return
         await self.store.set_location(ctx.user.id, place.id)
         was_pending = ctx.settings.pending_reminder
@@ -629,26 +721,23 @@ class BotApp:
             return
         w["data"]["stype"] = stype
         if stype == "once":
-            w["step"] = "when"
-            await ctx.reply(t("wizard_ask_when", ctx.lang), [
-                [(t("btn_today", ctx.lang), "dt:0"),
-                 (t("btn_tomorrow", ctx.lang), "dt:1"),
-                 (t("btn_in_2_days", ctx.lang), "dt:2")],
-            ])
+            self._goto(w, "when")
+            await self._ask_step(ctx, w)
         elif stype == "every_n_days":
-            w["step"] = "n"
-            await ctx.reply(t("wizard_ask_n", ctx.lang))
+            self._goto(w, "n")
+            await self._ask_step(ctx, w)
         elif stype == "monthly_day":
-            w["step"] = "monthday"
-            await ctx.reply(t("wizard_ask_month_day", ctx.lang))
+            self._goto(w, "monthday")
+            await self._ask_step(ctx, w)
         elif stype == "weekdays":
-            w["step"] = "days"
+            self._goto(w, "days")
             await self._wd_buttons(ctx, w)
 
     async def _wd_buttons(self, ctx: Ctx, w: dict) -> None:
         await ctx.reply(t("wizard_ask_days", ctx.lang),
                         [[(t(k, ctx.lang), f"wd:{i}") for i, k in enumerate(WD_KEYS)],
-                         [(t("wd_done", ctx.lang), "wdsubmit")]])
+                         [(t("wd_done", ctx.lang), "wdsubmit")]]
+                        + self._back_row(ctx, w))
 
     async def _cb_done(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
@@ -656,6 +745,15 @@ class BotApp:
             return
         if await self.store.mark_done(occ_id, ctx.ev.platform):
             await ctx.reply(t("msg_done", ctx.lang, title=got[1].title))
+
+    async def _cb_skip(self, ctx: Ctx, occ_id: int) -> None:
+        # "not today" without marking it done: closes this occurrence without
+        # the missed penalty, the schedule just continues with the next one
+        got = await self.store.get_occurrence(occ_id)
+        if not got or got[1].user_id != ctx.user.id:
+            return
+        if await self.store.skip(occ_id):
+            await ctx.reply(t("msg_skipped", ctx.lang, title=got[1].title))
 
     async def _cb_snooze(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
@@ -697,7 +795,8 @@ class BotApp:
             mark = t("task_overdue_mark", ctx.lang) if occ.status == "missed" else ""
             lines.append(t("task_row", ctx.lang, n=i, title=task.title, due=due_local) + mark)
             rows.append([(t("btn_done", ctx.lang), f"done:{occ.id}"),
-                         (t("btn_snooze", ctx.lang), f"snooze:{occ.id}")])
+                         (t("btn_snooze", ctx.lang), f"snooze:{occ.id}"),
+                         (t("btn_skip", ctx.lang), f"skip:{occ.id}")])
         await ctx.reply("\n".join(lines), rows)
 
     async def build_digest(self, user_id: int, settings: UserSettings, place: PlaceDC):
@@ -718,7 +817,8 @@ class BotApp:
             mark = t("task_overdue_mark", lang) if occ.status == "missed" else ""
             lines.append(t("task_row", lang, n=i, title=task.title, due=due) + mark)
             rows.append([(t("btn_done", lang), f"done:{occ.id}"),
-                         (t("btn_snooze", lang), f"snooze:{occ.id}")])
+                         (t("btn_snooze", lang), f"snooze:{occ.id}"),
+                         (t("btn_skip", lang), f"skip:{occ.id}")])
         return "\n".join(lines), rows
 
     async def _digest_now(self, user_id: int, origin: Account) -> bool:

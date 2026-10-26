@@ -346,7 +346,7 @@ class Store:
                 .where(
                     (
                         (TaskOccurrence.due_at >= day_start) & (TaskOccurrence.due_at <= day_end)
-                        & (TaskOccurrence.status != "done")
+                        & (TaskOccurrence.status.notin_(["done", "skipped"]))
                     )
                     | ((TaskOccurrence.status == "pending") & (TaskOccurrence.due_at < day_start))
                 )
@@ -378,6 +378,15 @@ class Store:
             due = _aware(occ.due_at)
             if due <= now:
                 occ.due_at = _naive(now + delta)
+            await s.commit()
+            return True
+
+    async def skip(self, occurrence_id: int) -> bool:
+        async with self._sf() as s:
+            occ = await s.get(TaskOccurrence, occurrence_id)
+            if not occ or occ.status in ("done", "skipped"):
+                return False
+            occ.status = "skipped"
             await s.commit()
             return True
 

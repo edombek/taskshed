@@ -19,6 +19,8 @@
   "task_paused_mark": " ⏸",
   "btn_done": "✅ Сделано",
   "btn_snooze": "⏭ Отложить",
+  "btn_skip": "⏭ Пропустить",
+  "msg_skipped": "Пропущено: «{title}» (не просрочка)",
   "msg_done": "Готово: «{title}» ✅",
   "msg_snoozed": "Отложено на {minutes} мин: «{title}»",
   "task_deleted": "Задача удалена.",
@@ -33,12 +35,12 @@
   "sched_weekdays": "Дни недели",
   "sched_monthly": "День месяца",
   "wizard_ask_n": "Каждые сколько дней?",
-  "wizard_ask_anchor_date": "С какой даты вести отсчёт? (ГГГГ-ММ-ДД или кнопкой)",
+  "wizard_ask_anchor_date": "С какой даты вести отсчёт? (например 15.11.2026, «завтра» или кнопкой)",
   "wizard_ask_days": "Выберите дни недели кнопками, затем «Готово».",
   "wd_mo": "пн", "wd_tu": "вт", "wd_we": "ср", "wd_th": "чт",
   "wd_fr": "пт", "wd_sa": "сб", "wd_su": "вс", "wd_done": "Готово",
   "wizard_ask_month_day": "Какого числа месяца? (1–31)",
-  "wizard_ask_when": "На какую дату и время? (ГГГГ-ММ-ДД ЧЧ:ММ)",
+  "wizard_ask_when": "На какую дату и время? (например 15.11.2026 14:30 или 15.11 14.30)",
   "wizard_ask_reminder": "Во сколько напоминать? (ЧЧ:ММ, можно кнопкой)",
   "wizard_saved": "Задача «{title}» добавлена в «{place}».",
   "wizard_cancelled": "Отменено.",
@@ -56,7 +58,7 @@
   "rem_updated": "Сохранено.\n{status}",
 
   "stats_header": "📊 Статистика ({period}):",
-  "stats_row": "{title}: выполнено {done} / просрочено {missed} / всего {total} ({percent}%)",
+  "stats_row": "{title}: выполнено {done} / просрочено {missed} / пропущено {skipped} / всего {total} ({percent}%)",
   "stats_no_data": "За этот период срабатываний не было.",
   "period_week": "неделя", "period_month": "месяц", "period_year": "год", "period_all": "весь срок",
   "stats_sent_doc": "Файл статистики.",
@@ -104,5 +106,6 @@
   "chart_top": "Топ задач (выполняемость, %)",
   "chart_trend": "Тренд выполнения по неделям",
   "chart_heat": "Календарь",
-  "w_done": "выполнено", "w_missed": "просрочено", "w_pending": "в плане"
+  "w_done": "выполнено", "w_missed": "просрочено", "w_pending": "в плане",
+  "w_skipped": "пропущено"
 }

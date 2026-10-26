@@ -11,7 +11,8 @@ from .models import Task, TaskOccurrence
 
 def per_task(occs: list[tuple[TaskOccurrence, Task]]) -> list[dict]:
     agg: dict[int, dict] = defaultdict(
-        lambda: {"title": "", "place_id": 0, "done": 0, "missed": 0, "pending": 0, "total": 0}
+        lambda: {"title": "", "place_id": 0, "done": 0, "missed": 0, "skipped": 0,
+                 "pending": 0, "total": 0}
     )
     for occ, task in occs:
         a = agg[task.id]
@@ -20,7 +21,9 @@ def per_task(occs: list[tuple[TaskOccurrence, Task]]) -> list[dict]:
         a[occ.status] = a.get(occ.status, 0) + 1
     out = []
     for a in agg.values():
-        a["percent"] = round(100 * a["done"] / a["total"]) if a["total"] else 0
+        # percent ignores intentional skips: they are neither done nor missed
+        base = a["total"] - a["skipped"]
+        a["percent"] = round(100 * a["done"] / base) if base else 0
         out.append(a)
     out.sort(key=lambda a: (-a["total"], a["title"]))
     return out
@@ -28,7 +31,8 @@ def per_task(occs: list[tuple[TaskOccurrence, Task]]) -> list[dict]:
 
 def per_day(occs: list[tuple[TaskOccurrence, Task]], tz: str) -> dict[date, dict]:
     tzinfo = ZoneInfo(tz)
-    days: dict[date, dict] = defaultdict(lambda: {"done": 0, "missed": 0, "pending": 0})
+    days: dict[date, dict] = defaultdict(lambda: {"done": 0, "missed": 0,
+                                                  "skipped": 0, "pending": 0})
     for occ, _ in occs:
         d = occ.due_at.astimezone(tzinfo).date()
         days[d][occ.status] = days[d].get(occ.status, 0) + 1
@@ -38,7 +42,7 @@ def per_day(occs: list[tuple[TaskOccurrence, Task]], tz: str) -> dict[date, dict
 def per_place(occs: list[tuple[TaskOccurrence, Task]],
               place_names: dict[int, str]) -> list[dict]:
     agg: dict[str, dict] = defaultdict(
-        lambda: {"done": 0, "missed": 0, "pending": 0, "total": 0}
+        lambda: {"done": 0, "missed": 0, "skipped": 0, "pending": 0, "total": 0}
     )
     for occ, task in occs:
         name = place_names.get(task.place_id, "?")
@@ -46,7 +50,8 @@ def per_place(occs: list[tuple[TaskOccurrence, Task]],
         a["total"] += 1
         a[occ.status] = a.get(occ.status, 0) + 1
     rows = [{"place": name, **a,
-             "percent": round(100 * a["done"] / a["total"]) if a["total"] else 0}
+             "percent": (round(100 * a["done"] / (a["total"] - a["skipped"]))
+                         if a["total"] - a["skipped"] else 0)}
             for name, a in agg.items()]
     rows.sort(key=lambda r: -r["total"])
     return rows

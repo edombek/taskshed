@@ -37,7 +37,8 @@ class TestAggregations:
 
     def test_per_day(self, occs):
         days = per_day(occs, "UTC")
-        assert days[date(2026, 10, 1)] == {"done": 2, "missed": 0, "pending": 1}
+        assert days[date(2026, 10, 1)] == {"done": 2, "missed": 0, "skipped": 0,
+                                           "pending": 1}
         assert days[date(2026, 10, 2)]["missed"] == 1
 
     def test_per_place(self, occs):
@@ -56,7 +57,7 @@ class TestExport:
         path = str(tmp_path / "s.csv")
         export.write_csv(per_task(occs), path)
         text = open(path, encoding="utf-8-sig").read()
-        assert "T1;3;2;1;0;67" in text
+        assert "T1;3;2;1;0;0;67" in text
 
     def test_xlsx(self, tmp_path, occs):
         from openpyxl import load_workbook
