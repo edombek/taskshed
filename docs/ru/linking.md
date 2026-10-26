@@ -2,6 +2,8 @@
 
 Поток: [linking-flow.mmd](../diagrams/linking-flow.mmd)
 
+![Поток привязки](../diagrams/linking-flow.png)
+
 Один человек (строка `users`) может владеть аккаунтами в Telegram и VK;
 задачи, места и настройки привязаны к пользователю и общие по умолчанию.
 

@@ -63,7 +63,9 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
   `gh` (authenticated as `edombek`, ssh protocol). Global git identity is
   `edombek <edombek@yandex.ru>` — do not override globally.
 - Docs: bilingual. `README.md` (English) + `README.ru.md` (Russian), cross-linked;
-  mirrored `docs/en/` and `docs/ru/`; diagrams as Mermaid in `docs/diagrams/`;
+  mirrored `docs/en/` and `docs/ru/`; diagrams as Mermaid in `docs/diagrams/`
+  (`.mmd` are the source of truth; rendered `.png` are committed and embedded
+  in docs/READMEs — regenerate with `scripts/render_diagrams.sh`);
   living checklist in `docs/PLAN.md`; `CHANGELOG.md` (Keep a Changelog).
   When code changes, update **both** language copies.
 - Tests: pytest (+pytest-asyncio). Chat-logic tests must go through the

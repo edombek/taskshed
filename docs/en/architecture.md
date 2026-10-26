@@ -1,8 +1,15 @@
 # Architecture (English)
 
-Component diagram: [architecture.mmd](../diagrams/architecture.mmd) ·
+## Diagrams
+
+![Component diagram](../diagrams/architecture.png)
+
+![ER diagram](../diagrams/er-diagram.png)
+
+Mermaid sources (single source of truth): [architecture.mmd](../diagrams/architecture.mmd) ·
 [ER](../diagrams/er-diagram.mmd) · [reminder flow](../diagrams/reminder-flow.mmd) ·
-[linking flow](../diagrams/linking-flow.mmd)
+[linking flow](../diagrams/linking-flow.mmd). PNGs above are committed and
+regenerated with `scripts/render_diagrams.sh` after editing any `.mmd`.
 
 ## Idea
 
@@ -51,7 +58,11 @@ whose deadline passed to `missed`.
 
 ### Reminder tick
 
-See the [sequence diagram](../diagrams/reminder-flow.mmd). Hard rules:
+See the [sequence diagram](../diagrams/reminder-flow.mmd).
+
+![Reminder flow](../diagrams/reminder-flow.png)
+
+Hard rules:
 1. quiet hours / `reminders_on=false` / trigger moment not reached → nothing;
 2. no occurrences due today → nothing;
 3. location older than `location_ttl_hours` → ask with place buttons first;
@@ -59,7 +70,11 @@ See the [sequence diagram](../diagrams/reminder-flow.mmd). Hard rules:
 
 ### Account linking
 
-See the [sequence diagram](../diagrams/linking-flow.mmd). `/link` mints a
+See the [sequence diagram](../diagrams/linking-flow.mmd).
+
+![Linking flow](../diagrams/linking-flow.png)
+
+`/link` mints a
 one-time 8-char code (10 min TTL, one active per user); the other platform
 redeems it. The redeeming account moves to the code owner and its previous
 user is merged in automatically (name clashes renamed `#2`); every step is

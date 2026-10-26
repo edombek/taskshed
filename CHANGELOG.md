@@ -35,4 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   at least the last month even when records are sparse; scheduler now
   honors each task's own reminder time (`reminder_at`, incl. snooze) in
   addition to the global digest moment; statistics reports/heatmap keep
-  planned (future) occurrences instead of filtering them out.
+  planned (future) occurrences instead of filtering them out; command menu
+  now attached to every plain command reply by default (and below task
+  lists); Mermaid diagrams rendered to committed PNGs
+  (`scripts/render_diagrams.sh`) and embedded in READMEs and the bilingual
+  architecture/linking docs.

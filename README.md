@@ -84,7 +84,10 @@ ruff check . && pytest      # lint + tests (all chat tests use FakeMessenger —
   [`docs/ru/configuration.md`](docs/ru/configuration.md)
 - Account linking: [`docs/en/linking.md`](docs/en/linking.md) ·
   [`docs/ru/linking.md`](docs/ru/linking.md)
-- Diagrams: [`docs/diagrams/`](docs/diagrams/)
+- Diagrams: [`docs/diagrams/`](docs/diagrams/) (Mermaid sources + rendered PNGs,
+  e.g. the architecture below)
+
+![Architecture](docs/diagrams/architecture.png)
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## License

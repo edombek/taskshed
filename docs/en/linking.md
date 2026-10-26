@@ -2,6 +2,8 @@
 
 Flow: [linking-flow.mmd](../diagrams/linking-flow.mmd)
 
+![Linking flow](../diagrams/linking-flow.png)
+
 One human (`users` row) can own a Telegram and a VK account; tasks, places
 and settings live on the user, so they are shared automatically.
 

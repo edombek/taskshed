@@ -86,7 +86,10 @@ ruff check . && pytest      # линт + тесты (чат-тесты идут 
   [`docs/ru/configuration.md`](docs/ru/configuration.md)
 - Привязка аккаунтов: [`docs/en/linking.md`](docs/en/linking.md) ·
   [`docs/ru/linking.md`](docs/ru/linking.md)
-- Диаграммы: [`docs/diagrams/`](docs/diagrams/)
+- Диаграммы: [`docs/diagrams/`](docs/diagrams/) (исходники Mermaid + готовые PNG,
+  например архитектура ниже)
+
+![Архитектура](docs/diagrams/architecture.png)
 - История изменений: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Лицензия
