@@ -75,6 +75,16 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Scheduler honors per-task `reminder_at` (and snooze), not just the
       global digest moment; stats keep planned occurrences in reports and
       on the heatmap; live user tz corrected to Europe/Moscow
+- [x] Menu as a "Хотите сделать что-нибудь ещё?" follow-up message after
+      completed commands (suppressed mid-wizard and under picker replies)
+- [x] Interactive statistics: period buttons → text + format buttons;
+      activity heatmap is the only chart (daily bars retired)
+- [x] Snooze duration buttons: 15 min / 1 h / 4 h / +1 day
+- [x] Explicit settings label for location-question frequency
+      (`location_ttl_hours`)
+- [x] Diagrams embedded in docs/READMEs as GitHub-native ```mermaid blocks
+      (vector), synced from `.mmd` via `scripts/sync_diagram_blocks.py` +
+      parity test; PNGs re-rendered at 3x and linked for offline readers
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

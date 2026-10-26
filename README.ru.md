@@ -86,11 +86,61 @@ ruff check . && pytest      # линт + тесты (чат-тесты идут 
   [`docs/ru/configuration.md`](docs/ru/configuration.md)
 - Привязка аккаунтов: [`docs/en/linking.md`](docs/en/linking.md) ·
   [`docs/ru/linking.md`](docs/ru/linking.md)
-- Диаграммы: [`docs/diagrams/`](docs/diagrams/) (исходники Mermaid + готовые PNG,
-  например архитектура ниже)
+- Диаграммы: [`docs/diagrams/`](docs/diagrams/) (исходники Mermaid + готовые PNG;
+  блоки ниже GitHub отображает в векторе)
 
-![Архитектура](docs/diagrams/architecture.png)
 - История изменений: [`CHANGELOG.md`](CHANGELOG.md)
+
+<!-- mermaid:begin architecture -->
+```mermaid
+graph LR
+    subgraph Platforms
+        TG[Telegram]
+        VK[VK]
+    end
+
+    subgraph Adapters
+        TGA[messaging/telegram.py<br/>Telethon start_bot + MTProxy]
+        VKA[messaging/vk.py<br/>Bot Long Poll, aiohttp]
+    end
+
+    EP[entrypoints/common.py<br/>wiring: run_telegram / run_vk / run_all]
+
+    subgraph Port["Messenger port (messaging/base.py)"]
+        P[IMessenger / RawEvent]
+        FAKE[FakeMessenger — tests]
+    end
+
+    subgraph Core
+        H[bot/app.py BotApp<br/>commands · wizards · buttons]
+        C[core/<br/>models · scheduling · stats]
+        S[scheduler/jobs.py<br/>minute tick, silence rules]
+        ST[stats/charts.py · stats/export.py<br/>PNG · CSV · XLSX]
+        I[i18n/ ru.json en.json]
+    end
+
+    subgraph Storage["storage/ (SQLAlchemy async + Alembic)"]
+        R[repositories.Store]
+        DB[(SQLite / PostgreSQL)]
+    end
+
+    TG --> TGA --> P
+    VK --> VKA --> P
+    FAKE -.tests only.-> P
+    EP -->|builds| TGA
+    EP -->|builds| VKA
+    EP -->|starts| S
+    P --> H --> C
+    S --> C
+    S -->|digest / ask-where| P
+    C --> R --> DB
+    H --> ST
+    H --> I
+    S --> I
+```
+<!-- mermaid:end architecture -->
+
+PNG-версия: [architecture.png](docs/diagrams/architecture.png)
 
 ## Лицензия
 

@@ -1,8 +1,36 @@
 # Привязка аккаунтов (русский)
 
-Поток: [linking-flow.mmd](../diagrams/linking-flow.mmd)
+<!-- mermaid:begin linking-flow -->
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Owner (already registered)
+    participant TG as Telegram bot
+    participant Core as BotApp + Store
+    participant VK as VK bot
 
-![Поток привязки](../diagrams/linking-flow.png)
+    U->>TG: /link  (RU: /привязать)
+    TG->>Core: create_link_code(user, telegram)<br/>8 chars, TTL 10 min, replaces any previous code
+    Core-->>TG: K3F9A2B7
+    TG-->>U: "Send to the VK bot: /link K3F9A2B7"
+    U->>VK: /link K3F9A2B7
+    VK->>Core: redeem_link_code
+    alt code valid & fresh & unused
+        Core->>Core: mark used, attach_account(vk → owner's user)
+        Core->>Core: merge_user(vk's old user → owner):<br/>places/tasks moved, name clashes renamed "#2",<br/>old settings/location deleted
+        Core->>Core: link_audit rows: link, merge
+        Core-->>VK: OK
+        VK-->>U: "Accounts linked. Reminders go to both chats."
+    else expired / used / unknown
+        Core-->>VK: None
+        VK-->>U: "Code invalid. Request a new one."
+    end
+    note over Core: Merge is automatic (no confirmation preview yet —<br/>see backlog in docs/PLAN.md). /unlink reverts only<br/>the account, when the user has other accounts.
+```
+<!-- mermaid:end linking-flow -->
+
+Источник: [linking-flow.mmd](../diagrams/linking-flow.mmd) ·
+PNG: [linking-flow.png](../diagrams/linking-flow.png)
 
 Один человек (строка `users`) может владеть аккаунтами в Telegram и VK;
 задачи, места и настройки привязаны к пользователю и общие по умолчанию.

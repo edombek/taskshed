@@ -17,5 +17,5 @@ JSON
 
 for f in docs/diagrams/*.mmd; do
   echo "rendering $f"
-  npx -y @mermaid-js/mermaid-cli@11 -i "$f" -o "${f%.mmd}.png" -b white -p "$CFG"
+  npx -y @mermaid-js/mermaid-cli@11 -i "$f" -o "${f%.mmd}.png" -b white -s 3 -p "$CFG"
 done

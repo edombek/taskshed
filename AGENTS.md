@@ -64,8 +64,11 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
   `edombek <edombek@yandex.ru>` — do not override globally.
 - Docs: bilingual. `README.md` (English) + `README.ru.md` (Russian), cross-linked;
   mirrored `docs/en/` and `docs/ru/`; diagrams as Mermaid in `docs/diagrams/`
-  (`.mmd` are the source of truth; rendered `.png` are committed and embedded
-  in docs/READMEs — regenerate with `scripts/render_diagrams.sh`);
+  (`.mmd` are the source of truth; docs/READMEs embed them as fenced ```mermaid
+  blocks — GitHub renders those as vector — kept in sync by
+  `scripts/sync_diagram_blocks.py` and guarded by `tests/test_docs_diagrams.py`;
+  rendered 3x `.png` are committed and linked for offline readers, regenerate
+  with `scripts/render_diagrams.sh`);
   living checklist in `docs/PLAN.md`; `CHANGELOG.md` (Keep a Changelog).
   When code changes, update **both** language copies.
 - Tests: pytest (+pytest-asyncio). Chat-logic tests must go through the
