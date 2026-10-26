@@ -48,6 +48,8 @@ class TelegramAdapter:
     # ---------- inbound ----------
 
     async def _on_message(self, ev) -> None:
+        log.info("incoming message chat=%s private=%s text=%r",
+                 ev.chat_id, ev.is_private, (ev.raw_text or "")[:80])
         if not ev.is_private:
             return
         await self.app.handle(RawEvent(
@@ -57,6 +59,7 @@ class TelegramAdapter:
         ))
 
     async def _on_callback(self, ev) -> None:
+        log.info("incoming callback chat=%s data=%r", ev.chat_id, ev.data)
         if not ev.is_private:
             return
         try:
