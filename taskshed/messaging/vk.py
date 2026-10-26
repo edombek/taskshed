@@ -133,6 +133,12 @@ class VkAdapter:
                         message=text, keyboard=build_keyboard(buttons),
                         random_id=random.randint(1, 2**31))
 
+    async def edit_buttons(self, account: Account, message_id: str, text: str,
+                           buttons: ButtonRows) -> bool:
+        # Bot Long Poll sends do not expose message ids, so VK keeps
+        # appending fresh keyboard messages instead of editing in place
+        return False
+
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:
         try:
             up = await self._api("messages.getConversationPhotoUploadServer",

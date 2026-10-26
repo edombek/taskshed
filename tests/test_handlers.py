@@ -644,3 +644,26 @@ class TestWizardBackAndFlexDates:
         assert tasks[0].schedule_data["n"] == 3
         tomorrow = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
         assert tasks[0].schedule_data["anchor"] == tomorrow
+
+
+class TestWizardDaysToggle:
+    async def test_days_marked_and_message_edited(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await send(env, "/задача")
+        await send(env, "тренировка")
+        await send(env, cb=f"place:{pid}")
+        await send(env, cb="sched:weekdays")
+        assert len(fake.sent) == 1  # the days keyboard, nothing else yet
+        # taps arrive without clearing the fake: edits must not add messages
+        for cb in ("wd:4", "wd:5"):
+            await app.handle(RawEvent("telegram", PID, callback=cb))
+        assert len(fake.sent) == 1  # edited in place, not re-sent
+        labels = [lbl for row in fake.last_buttons() for lbl, _ in row]
+        assert sum(1 for lbl in labels if lbl.startswith("✅")) == 2
+        # deselect drops the check too
+        await app.handle(RawEvent("telegram", PID, callback="wd:4"))
+        labels = [lbl for row in fake.last_buttons() for lbl, _ in row]
+        assert sum(1 for lbl in labels if lbl.startswith("✅")) == 1

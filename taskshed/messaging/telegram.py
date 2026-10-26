@@ -76,15 +76,31 @@ class TelegramAdapter:
 
     # ---------- IMessenger ----------
 
-    async def send_text(self, account: Account, text: str) -> None:
-        await self.client.send_message(int(account.platform_user_id), text,
-                                       link_preview=False)
+    async def send_text(self, account: Account, text: str) -> str | None:
+        msg = await self.client.send_message(int(account.platform_user_id), text,
+                                             link_preview=False)
+        return str(msg.id)
 
-    async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
-        await self.client.send_message(
+    async def send_buttons(self, account: Account, text: str,
+                           buttons: ButtonRows) -> str | None:
+        msg = await self.client.send_message(
             int(account.platform_user_id), text,
             buttons=inline_rows(buttons), parse_mode=None, link_preview=False,
         )
+        return str(msg.id)
+
+    async def edit_buttons(self, account: Account, message_id: str, text: str,
+                           buttons: ButtonRows) -> bool:
+        try:
+            await self.client.edit_message(int(account.platform_user_id),
+                                           int(message_id), message=text,
+                                           buttons=inline_rows(buttons),
+                                           parse_mode=None, link_preview=False)
+            return True
+        except Exception:  # deleted/stale message: caller re-sends instead
+            log.debug("edit_message failed (chat=%s id=%s)",
+                      account.platform_user_id, message_id)
+            return False
 
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:
         await self.client.send_file(int(account.platform_user_id), path, caption=caption)

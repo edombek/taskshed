@@ -734,10 +734,20 @@ class BotApp:
             await self._wd_buttons(ctx, w)
 
     async def _wd_buttons(self, ctx: Ctx, w: dict) -> None:
-        await ctx.reply(t("wizard_ask_days", ctx.lang),
-                        [[(t(k, ctx.lang), f"wd:{i}") for i, k in enumerate(WD_KEYS)],
-                         [(t("wd_done", ctx.lang), "wdsubmit")]]
-                        + self._back_row(ctx, w))
+        # chosen days carry a ✅; on Telegram the message is edited in place
+        # instead of sending a fresh one per tap
+        rows = [[(("✅ " if i in w["days"] else "") + t(k, ctx.lang), f"wd:{i}")
+                 for i, k in enumerate(WD_KEYS)],
+                [(t("wd_done", ctx.lang), "wdsubmit")]] + self._back_row(ctx, w)
+        text = t("wizard_ask_days", ctx.lang)
+        mid = w.get("wd_msg")
+        if mid and await ctx.messenger.edit_buttons(ctx.account, mid, text, rows):
+            ctx.replied = True
+            return
+        new_id = await ctx.messenger.send_buttons(ctx.account, text, rows)
+        ctx.replied = True
+        if new_id:
+            w["wd_msg"] = new_id
 
     async def _cb_done(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)

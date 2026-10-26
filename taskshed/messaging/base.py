@@ -27,15 +27,20 @@ class IMessenger(Protocol):
 
     platform: str
 
-    async def send_text(self, account: Account, text: str) -> None: ...
+    async def send_text(self, account: Account, text: str) -> str | None: ...
 
     async def send_buttons(self, account: Account, text: str,
-                           buttons: ButtonRows) -> None: ...
+                           buttons: ButtonRows) -> str | None: ...
 
     async def send_image(self, account: Account, path: str, caption: str = "") -> None: ...
 
     async def send_document(self, account: Account, path: str, name: str,
                             caption: str = "") -> None: ...
+
+    async def edit_buttons(self, account: Account, message_id: str, text: str,
+                           buttons: ButtonRows) -> bool:
+        """Update an interactive message in place; False when unsupported."""
+        ...
 
 
 @dataclass(slots=True)
@@ -47,6 +52,7 @@ class SentMessage:
     buttons: ButtonRows = field(default_factory=list)
     image: str | None = None
     document: str | None = None
+    id: str = ""
 
 
 class FakeMessenger:
@@ -55,12 +61,29 @@ class FakeMessenger:
     def __init__(self, platform: str = "telegram") -> None:
         self.platform = platform
         self.sent: list[SentMessage] = []
+        self._seq = 0
 
-    async def send_text(self, account: Account, text: str) -> None:
-        self.sent.append(SentMessage(account, text))
+    def _mid(self) -> str:
+        self._seq += 1
+        return f"{self.platform}-{self._seq}"
 
-    async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
-        self.sent.append(SentMessage(account, text, buttons))
+    async def send_text(self, account: Account, text: str) -> str | None:
+        msg = SentMessage(account, text, id=self._mid())
+        self.sent.append(msg)
+        return msg.id
+
+    async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> str | None:
+        msg = SentMessage(account, text, buttons, id=self._mid())
+        self.sent.append(msg)
+        return msg.id
+
+    async def edit_buttons(self, account: Account, message_id: str, text: str,
+                           buttons: ButtonRows) -> bool:
+        for m in self.sent:
+            if m.id == message_id:
+                m.text, m.buttons = text, buttons
+                return True
+        return False
 
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:
         self.sent.append(SentMessage(account, caption, image=path))
