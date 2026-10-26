@@ -44,7 +44,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   command (not mid-wizard, not under replies that already carry input
   buttons); statistics are interactive — period picked via buttons first,
   then text with format buttons (activity heatmap only, daily-bar chart
-  retired); snooze asks for the duration (15 min / 1 h / 4 h / +1 day)
+  retired; the menu follow-up arrives after the chart/document too); snooze asks for the duration (15 min / 1 h / 4 h / +1 day)
   instead of silently adding a fixed hour; the location-question frequency
   setting has an explicit label; docs/READMEs embed diagrams as GitHub-native
   ```mermaid blocks (vector) synced from the `.mmd` sources by

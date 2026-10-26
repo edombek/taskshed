@@ -280,6 +280,8 @@ class BotApp:
             return
         if fmt in ("csv", "xlsx", "график", "chart"):
             await self._stats_file(ctx, occs, name, fmt)
+            # the file/chart ends the answer: the menu follow-up must follow
+            ctx.replied = True
             return
         ctx.suppress_menu = True
         await ctx.reply(self._stats_text(ctx, occs, name), [

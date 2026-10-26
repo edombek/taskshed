@@ -179,9 +179,11 @@ class TestStatsCommands:
         f = await send(env, "/статистика неделя")
         assert "Отчёт" in f.texts()[0] and "100%" in f.texts()[0]
         f = await send(env, "/статистика всё csv")
-        assert f.sent[-1].document and f.sent[-1].document.endswith(".csv")
+        docs = [m.document for m in f.sent if m.document]
+        assert len(docs) == 1 and docs[0].endswith(".csv")
         f = await send(env, "/статистика месяц график")
-        assert f.sent[-1].image and f.sent[-1].image.endswith(".png")
+        images = [m.image for m in f.sent if m.image]
+        assert len(images) == 1 and images[0].endswith(".png")
 
 
 class TestFanout:
@@ -460,12 +462,17 @@ class TestInteractiveStats:
         images = [m for m in f.sent if m.image]
         assert len(images) == 1  # the retired daily-bar chart must not return
         assert images[0].image.endswith(".png")
+        # the chart is the end of the answer: the menu follow-up must come
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat
 
     async def test_csv_button_sends_document(self, env):
         await self._seed(env)
         f = await send(env, cb="fmt:csv:month")
         docs = [m for m in f.sent if m.document]
         assert len(docs) == 1 and docs[0].document.endswith(".csv")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat
 
 
 class TestFollowUpSuppressed:
