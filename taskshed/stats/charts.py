@@ -15,10 +15,14 @@ COLOR_DONE = "#2e8b57"
 COLOR_MISSED = "#c0392b"
 COLOR_PENDING = "#95a5a6"
 
-HEAT_GREENS = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"]
-HEAT_MISSED = "#d73027"
-HEAT_PENDING = "#4a90d9"
-HEAT_SKIPPED = "#e08214"
+HEAT_BG = "#0d1117"      # GitHub dark canvas
+HEAT_EMPTY = "#161b22"   # day without completions
+HEAT_TEXT = "#c9d1d9"
+# dark-theme green scale (GitHub contributions): index = completions 0..4+
+HEAT_GREENS = [HEAT_EMPTY, "#0e4429", "#006d32", "#26a641", "#39d353"]
+HEAT_MISSED = "#f85149"
+HEAT_PENDING = "#58a6ff"
+HEAT_SKIPPED = "#e3b341"
 
 
 def _legend(lang: str):
@@ -106,10 +110,11 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                    end: date | None = None) -> str:
     """GitHub-contribution-style grid: week columns, Mon-Sun rows.
 
-    Cell base color = number of completions (green scale, GitHub palette);
-    every day of the window gets a cell, empty ones stay gray. Inside a
-    cell a small red square marks missed occurrences (top-right) and a
-    blue square marks still-planned ones (bottom-right).
+    Cell base color = number of completions (green scale, GitHub dark
+    palette on a dark canvas); every day of the window gets a cell, empty
+    ones stay dark gray. Inside a cell a small red square marks missed
+    occurrences (top-right), a blue one still-planned ones (bottom-right)
+    and an orange one skipped ones (bottom-left).
     """
     from datetime import timedelta
 
@@ -120,7 +125,9 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         return ""
     first_monday, n_weeks = _heatmap_window(days, end, min_weeks, max_weeks)
 
-    fig, ax = plt.subplots(figsize=(0.26 * n_weeks + 2.2, 2.8))
+    fig, ax = plt.subplots(figsize=(0.26 * n_weeks + 2.6, 2.6))
+    fig.patch.set_facecolor(HEAT_BG)
+    ax.set_facecolor(HEAT_BG)
     d = first_monday
     for wi in range(n_weeks):
         for row in range(7):
@@ -128,7 +135,7 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
             done = int(agg.get("done", 0))
             ax.add_patch(mpatches.Rectangle((wi, row), 0.86, 0.86,
                                             facecolor=HEAT_GREENS[min(done, 4)],
-                                            edgecolor="white", linewidth=0.4))
+                                            edgecolor=HEAT_BG, linewidth=0.4))
             if int(agg.get("missed", 0)):
                 ax.add_patch(mpatches.Rectangle((wi + 0.5, row), 0.36, 0.36,
                                                 facecolor=HEAT_MISSED,
@@ -150,13 +157,15 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
         key = (monday.year, monday.month)
         if key not in seen:
             seen.add(key)
-            ax.text(wi, -0.9, monday.strftime("%b"), fontsize=7,
-                    ha="left", va="center")
+            ax.text(wi + 0.1, -0.75, monday.strftime("%b"), fontsize=7,
+                    ha="left", va="center", color=HEAT_TEXT)
+    # weekday labels centered on their rows (cells span row..row+0.86)
     for row, name in ((0, "Mon"), (2, "Wed"), (4, "Fri")):
-        ax.text(-0.4, row, name, fontsize=7, ha="right", va="center")
+        ax.text(-0.25, row + 0.43, name, fontsize=7, ha="right", va="center",
+                color=HEAT_TEXT)
 
-    ax.set_xlim(-2.2, n_weeks)
-    ax.set_ylim(6.6, -1.6)
+    ax.set_xlim(-2.4, n_weeks)
+    ax.set_ylim(6.3, -1.3)
     ax.axis("off")
 
     handles = [
@@ -173,10 +182,11 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                markerfacecolor=HEAT_SKIPPED, markeredgecolor="none",
                label=_legend(lang)[3]),
     ]
-    ax.legend(handles=handles, loc="lower right", fontsize=7, ncols=4,
-              frameon=False, bbox_to_anchor=(1.0, -0.12))
-    ax.set_title(t("chart_heat", lang), fontsize=9)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=110)
+    leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
+                    frameon=False, bbox_to_anchor=(0.5, -0.02))
+    for txt in leg.get_texts():
+        txt.set_color(HEAT_TEXT)
+    ax.set_title(t("chart_heat", lang), fontsize=9, color=HEAT_TEXT, pad=12)
+    fig.savefig(out_path, dpi=110, facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
     return out_path
