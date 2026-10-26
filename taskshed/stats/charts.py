@@ -165,7 +165,9 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
                 color=HEAT_TEXT)
 
     ax.set_xlim(-2.4, n_weeks)
-    ax.set_ylim(6.3, -1.3)
+    # bottom must clear the Sunday row: cells span row..row+0.86, Sunday is
+    # row 6 → 6.86, anything less clips those squares
+    ax.set_ylim(6.9, -1.3)
     ax.axis("off")
 
     handles = [
