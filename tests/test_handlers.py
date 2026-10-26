@@ -699,11 +699,11 @@ class TestReminderSettingsFlow:
         app, store, fake = await self._open_settings(env)
         assert len(fake.sent) == 1 and "Напоминания:" in fake.texts()[0]
         await self._cb(app, "rem:times")
-        assert "Новые времена" in fake.texts()[-1]  # prompt now appears
+        assert "Во сколько напоминать" in fake.texts()[-1]  # prompt appears
         await self._text(app, "09:00 18:30")
         statuses = [m for m in fake.sent if "Напоминания:" in m.text]
         assert len(statuses) == 1  # the screen was edited, not duplicated
-        assert "Времена: 09:00 18:30" in statuses[0].text
+        assert "по временам (09:00 18:30)" in statuses[0].text
         st = await store.get_settings((await store.get_user_by_account(
             "telegram", PID)).id)
         assert st.remind_times == ["09:00", "18:30"]
@@ -748,3 +748,38 @@ class TestBackOnEveryPrompt:
         f = await send(env, "/места")
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert flat == ["menu:back"]
+
+
+class TestRemindersWhenFlow:
+    async def _open(self, env):
+        await send(env, "Дом")
+        app, store, fake = env
+        fake.clear()
+        await app.handle(RawEvent("telegram", PID, text="/напоминания"))
+        return app, store, fake
+
+    async def _cb(self, app, cb):
+        await app.handle(RawEvent("telegram", PID, callback=cb))
+
+    async def test_single_when_button_with_mode_picker(self, env):
+        app, store, fake = await self._open(env)
+        flat = [cb for row in fake.last_buttons() for _, cb in row]
+        assert "rem:when" in flat and "rem:times" not in flat
+        await self._cb(app, "rem:when")
+        flat = [cb for row in fake.last_buttons() for _, cb in row]
+        assert flat == ["rem:times", "rem:interval", "rem:back"]
+        assert "Сейчас: по временам" in fake.texts()[-1]
+        # Назад in the picker returns to the settings screen in place
+        await self._cb(app, "rem:back")
+        statuses = [m for m in fake.sent if "Напоминания:" in m.text]
+        assert len(statuses) == 1
+
+    async def test_interval_via_picker(self, env):
+        app, store, fake = await self._open(env)
+        await self._cb(app, "rem:when")
+        await self._cb(app, "rem:interval")
+        assert "Каждые сколько минут" in fake.texts()[-1]
+        await app.handle(RawEvent("telegram", PID, text="90"))
+        statuses = [m for m in fake.sent if "Напоминания:" in m.text]
+        assert len(statuses) == 1
+        assert "каждые 90 мин" in statuses[0].text

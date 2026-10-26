@@ -894,15 +894,12 @@ class BotApp:
         st = ctx.settings
         status = t("reminders_status", ctx.lang,
                    on=t("rem_on" if st.reminders_on else "rem_off", ctx.lang),
-                   mode=st.remind_mode,
-                   times=" ".join(st.remind_times) if st.remind_mode == "times"
-                   else f"{st.remind_interval_min} min",
+                   mode=self._rem_mode_label(st, ctx.lang),
                    quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
                    ttl=st.location_ttl_hours, tz=st.tz)
         rows = [
             [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
-            [(t("btn_rem_times", ctx.lang), "rem:times"),
-             (t("btn_rem_interval", ctx.lang), "rem:interval")],
+            [(t("btn_rem_when", ctx.lang), "rem:when")],
             [(t("btn_rem_quiet", ctx.lang), "rem:quiet"),
              (t("btn_rem_ttl", ctx.lang), "rem:ttl")],
             [(t("btn_rem_tz", ctx.lang), "rem:tz")],
@@ -919,6 +916,11 @@ class BotApp:
         if new_id:
             self._rem_msgs[key] = new_id
 
+    def _rem_mode_label(self, st, lang: str) -> str:
+        if st.remind_mode == "times":
+            return t("rem_mode_times", lang, times=" ".join(st.remind_times))
+        return t("rem_mode_interval", lang, minutes=st.remind_interval_min)
+
     async def _cb_rem(self, ctx: Ctx, arg: str) -> None:
         if arg == "toggle":
             st = await self.store.update_settings(
@@ -927,10 +929,27 @@ class BotApp:
             ctx.settings = st
             await self._rem_status(ctx)
             return
+        if arg == "when":
+            # one entry point for both modes: pick the mode, then the value
+            ctx.suppress_menu = True
+            await ctx.reply(
+                t("rem_when_ask", ctx.lang,
+                  mode=self._rem_mode_label(ctx.settings, ctx.lang)), [
+                    [(t("rem_when_times_btn", ctx.lang), "rem:times")],
+                    [(t("rem_when_interval_btn", ctx.lang), "rem:interval")],
+                    [(t("btn_back", ctx.lang), "rem:back")],
+                ])
+            return
+        if arg == "back":
+            # leave the sub-question without leaving the settings screen
+            await self._rem_status(ctx)
+            return
         if arg in ("times", "interval", "quiet", "ttl", "tz"):
             self._pending_inputs[ctx.user.id] = f"reminput:{arg}"
             ctx.suppress_menu = True  # the next message is the value itself
-            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang), self._back_only(ctx))
+            back = [[(t("btn_back", ctx.lang),
+                      "rem:back" if arg in ("times", "interval") else "menu:back")]]
+            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang), back)
 
     async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
         values: dict = {}
@@ -942,12 +961,12 @@ class BotApp:
                           "remind_times": [p.strftime("%H:%M") for p in parsed]}
             else:
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("btn_rem_times", ctx.lang)))
+                                  hint=t("rem_ask_times", ctx.lang)))
                 return
         elif field == "interval":
             if not text.isdigit() or int(text) < 5:
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("btn_rem_interval", ctx.lang)))
+                                  hint=t("rem_ask_interval", ctx.lang)))
                 return
             values = {"remind_mode": "interval", "remind_interval_min": int(text)}
         elif field == "quiet":
@@ -955,13 +974,13 @@ class BotApp:
             parsed = [_parse_hhmm(p) for p in parts]
             if len(parts) != 2 or any(p is None for p in parsed):
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("btn_rem_quiet", ctx.lang)))
+                                  hint=t("rem_ask_quiet", ctx.lang)))
                 return
             values = {"quiet_start": parsed[0], "quiet_end": parsed[1]}
         elif field == "ttl":
             if not text.isdigit() or not 1 <= int(text) <= 168:
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("btn_rem_ttl", ctx.lang)))
+                                  hint=t("rem_ask_ttl", ctx.lang)))
                 return
             values = {"location_ttl_hours": int(text)}
         elif field == "tz":
@@ -969,7 +988,7 @@ class BotApp:
                 ZoneInfo(text.strip())
             except (KeyError, ValueError):
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("btn_rem_tz", ctx.lang)))
+                                  hint=t("rem_ask_tz", ctx.lang)))
                 return
             values = {"tz": text.strip()}
         st = await self.store.update_settings(ctx.user.id, **values)

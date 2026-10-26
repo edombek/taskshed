@@ -99,6 +99,9 @@ Checklist of the implementation roadmap. EN summary in
       settings values, scheduler location question); Назад cancels the
       awaited input; reminder settings edited in place, prompts explain
       the expected value; localized heatmap labels
+- [x] Reminder timing merged into one flow: «⏰ Когда напоминать» →
+      times/every-N-minutes picker; localized mode line on the settings
+      screen; ⬅️ Назад in the picker returns to settings (in place)
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

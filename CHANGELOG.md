@@ -67,4 +67,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Интервал/Тихие часы/Частота опроса/Часовой пояс" now answer with a
   concrete format hint (they used to swallow the tap), and setting changes
   re-render the settings message in place instead of posting a copy;
-  heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
+  reminder timing is now one process — a single «⏰ Когда напоминать»
+  button offers «в определённые времена дня / каждые N минут», the mode
+  and its value are shown in Russian on the settings screen («Режим:
+  по временам (09:00 13:00)»), and the prompts explain what the values
+  mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
