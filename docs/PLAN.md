@@ -118,6 +118,12 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Chart PNGs rendered at up to 300 dpi inside Telegram's photo budget
 - [x] Stale keyboards disarmed: only the newest screen in a chat keeps its
       inline buttons (`edit_buttons(..., [])` port convention)
+- [x] ✏️ Task editor (`/изменить`): card with a button per item (title, place,
+      repeat rule, work window, reminder), delete behind confirmation; tabs for
+      upcoming / recurring / past / all tasks; a schedule change rebuilds open
+      repeats and keeps finished history
+- [x] SQLite: `PRAGMA foreign_keys=ON` per connection, so ON DELETE CASCADE
+      actually removes a deleted task's occurrences and completions
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

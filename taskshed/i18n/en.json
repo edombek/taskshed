@@ -1,6 +1,6 @@
 {
   "greet": "Hi! I will remind you about your tasks wherever you are.\nCreate places (/places) and tasks (/task), and I'll write when there is something to do.\n\nCommands: /where /tasks /task /places /settings /stats /link /lang",
-  "help_text": "Commands:\n/where — my current place\n/tasks — tasks for the current place\n/task — create a task\n/places — list places\n/delete <n> — delete a task\n/settings — all settings (reminders, language, platforms)\n/stats [week|month|year|all] [csv|xlsx|chart]\n/link — connect the other platform\n/lang — language (ru/en)",
+  "help_text": "Commands:\n/where — my current place\n/tasks — tasks for the current place\n/task — create a task\n/edit — change or delete a task\n/places — list places\n/settings — all settings (reminders, language, platforms)\n/stats [week|month|year|all] [csv|xlsx|chart]\n/link — connect the other platform\n/lang — language (ru/en)",
   "unknown_cmd": "Unknown command. Try /help",
   "places_list": "Your places: {names}",
   "no_places": "You have no places yet. Add one by typing, e.g. Home",
@@ -159,5 +159,22 @@
   "save_when_weekdays": "🗓 on: {days}",
   "save_when_monthly": "🗓 day {day} of the month",
   "save_reminder": "🔔 reminder at {time}",
-  "save_next": "👉 first up: {when}"
+  "save_next": "👉 first up: {when}",
+  "menu_edit": "✏️ Edit a task",
+  "edit_tab_future": "🔜 Upcoming",
+  "edit_tab_recurring": "🔁 Recurring",
+  "edit_tab_past": "📚 Past",
+  "edit_tab_all": "📋 All",
+  "edit_picker_head": "✏️ {tab} — pick a task",
+  "edit_none": "This list is empty.",
+  "edit_saved": "✅ Updated: “{title}”",
+  "edit_f_title": "✏️ Title",
+  "edit_f_place": "📍 Place",
+  "edit_f_schedule": "🗓 Repeat",
+  "edit_f_weekdays": "📅 Weekdays",
+  "edit_f_when": "🕐 Start & deadline",
+  "edit_f_reminder": "🔔 Reminder",
+  "edit_delete": "🗑 Delete task",
+  "edit_delete_ask": "Delete “{title}” with all of its repeats?",
+  "edit_delete_yes": "✅ Yes, delete"
 }

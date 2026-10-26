@@ -285,11 +285,6 @@ class Store:
             await s.commit()
             return _task(t)
 
-    async def get_task(self, task_id: int) -> TaskDC | None:
-        async with self._sf() as s:
-            row = await s.get(Task, task_id)
-            return _task(row) if row else None
-
     async def list_tasks(self, user_id: int, place_id: int | None = None,
                          active_only: bool = True) -> list[TaskDC]:
         async with self._sf() as s:
@@ -300,6 +295,27 @@ class Store:
                 q = q.where(Task.is_active.is_(True))
             rows = (await s.scalars(q.order_by(Task.id))).all()
             return [_task(r) for r in rows]
+
+    async def get_task(self, user_id: int, task_id: int) -> TaskDC | None:
+        async with self._sf() as s:
+            row = await s.scalar(select(Task).where(Task.id == task_id,
+                                                   Task.user_id == user_id))
+            return _task(row) if row else None
+
+    async def save_task(self, task: TaskDC) -> bool:
+        """Write an edited task back (id/user_id pick the row)."""
+        async with self._sf() as s:
+            res = await s.execute(
+                update(Task)
+                .where(Task.id == task.id, Task.user_id == task.user_id)
+                .values(title=task.title, note=task.note, place_id=task.place_id,
+                        schedule_type=task.schedule_type,
+                        schedule_data=task.schedule_data,
+                        reminder_time=task.reminder_time.strftime("%H:%M"),
+                        deadline=_naive(task.deadline) if task.deadline else None,
+                        start_at=_naive(task.start_at) if task.start_at else None))
+            await s.commit()
+            return bool(res.rowcount)
 
     async def set_task_active(self, task_id: int, user_id: int, active: bool) -> bool:
         async with self._sf() as s:
@@ -431,6 +447,19 @@ class Store:
             )
             await s.commit()
             return res.rowcount
+
+    async def drop_open_occurrences(self, task_id: int) -> int:
+        """Forget repeats that were never worked (after a schedule change).
+
+        Done/missed/skipped rows stay: they are history and feed statistics.
+        """
+        async with self._sf() as s:
+            res = await s.execute(
+                delete(TaskOccurrence)
+                .where(TaskOccurrence.task_id == task_id,
+                       TaskOccurrence.status.in_(("pending", "in_progress"))))
+            await s.commit()
+            return res.rowcount or 0
 
     # ---------- linking ----------
 

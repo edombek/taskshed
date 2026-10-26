@@ -15,6 +15,9 @@ config.yaml
 *.db
 *.sqlite3
 
+# Runtime logs of the locally running bot
+logs/
+
 # Telethon session files (bot auth keys)
 *.session
 *.session-journal

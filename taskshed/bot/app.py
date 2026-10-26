@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from taskshed.config import BotCfg
 from taskshed.core.models import Account, Platform, User, UserSettings
 from taskshed.core.models import Place as PlaceDC
+from taskshed.core.stats import occurrence_moment
 from taskshed.i18n import normalize, t
 from taskshed.messaging.base import ButtonRows, IMessenger, RawEvent
 from taskshed.storage.repositories import Store
@@ -27,6 +28,7 @@ COMMANDS = {
     "задача": "task", "task": "task",
     "места": "places", "places": "places",
     "удалить": "delete", "delete": "delete",
+    "изменить": "edit", "edit": "edit", "редактировать": "edit",
     "напоминания": "settings", "reminders": "settings",
     "настройки": "settings", "settings": "settings",
     "статистика": "stats", "stats": "stats",
@@ -166,6 +168,8 @@ class BotApp:
         # live keyboards per (user, account): {message_id: text}. A newer
         # answer strips these, so stale buttons cannot be tapped twice
         self._kb_msgs: dict[tuple[int, int], dict[str, str]] = {}
+        # last tab of the task editor per user: where ⬅️ Назад goes back to
+        self._edit_tab: dict[int, str] = {}
 
     def _track_kb(self, user_id: int, account: Account, mid: str | None,
                   text: str) -> None:
@@ -290,9 +294,10 @@ class BotApp:
         """Inline menu under /start and /help: one button per command."""
         return [
             [(t("menu_where", lang), "cmd:where"), (t("menu_tasks", lang), "cmd:tasks")],
-            [(t("menu_task", lang), "cmd:task"), (t("menu_places", lang), "cmd:places")],
-            [(t("menu_settings", lang), "cmd:settings"),
+            [(t("menu_task", lang), "cmd:task"), (t("menu_edit", lang), "cmd:edit")],
+            [(t("menu_places", lang), "cmd:places"),
              (t("menu_stats", lang), "cmd:stats")],
+            [(t("menu_settings", lang), "cmd:settings")],
         ]
 
     def _back_only(self, ctx: Ctx) -> ButtonRows:
@@ -336,6 +341,8 @@ class BotApp:
 
     async def _cmd_delete(self, ctx: Ctx, arg: str) -> None:
         if not arg.isdigit():
+            # bare /удалить: the editor lists tasks and deletes with a confirm
+            await self._edit_picker(ctx, "all")
             return
         tasks = await self.store.list_tasks(ctx.user.id, active_only=False)
         idx = int(arg) - 1
@@ -593,6 +600,10 @@ class BotApp:
         step = w["step"]
         if step == "title":
             w["data"]["title"] = _defang(text.strip())[:200]
+            if w.get("only") == "title":
+                # editor: renaming is the whole change
+                await self._wizard_finish(ctx, w, w["data"].get("rt", time(9, 0)))
+                return
             self._goto(w, "place")
             await self._ask_step(ctx, w)
         elif step == "n":
@@ -733,12 +744,75 @@ class BotApp:
         self.wizards.pop(ctx.user.id, None)
         await ctx.reply(await self._saved_card(ctx, task, place))
 
-    async def _saved_card(self, ctx: Ctx, task, place) -> str:
-        """What was just created: title, place, the when, the reminder moment."""
-        from taskshed.core.stats import occurrence_moment
+    def _wizard_task_fields(self, w: dict) -> tuple[str, dict, datetime | None,
+                                                     datetime | None]:
+        """(schedule type, its data, ready-by moment, start) from wizard data."""
+        d = w["data"]
+        stype = d["stype"]
+        sdata: dict = {}
+        deadline = start_at = None
+        if stype == "once":
+            deadline, start_at = d["deadline"], d.get("start")
+        elif stype == "every_n_days":
+            sdata = {"n": d["n"], "anchor": d["anchor"]}
+        elif stype == "weekdays":
+            sdata = {"weekdays": sorted(w["days"])}
+        elif stype == "monthly_day":
+            sdata = {"day": d["day"]}
+        return stype, sdata, deadline, start_at
 
+    async def _wizard_finish(self, ctx: Ctx, w: dict, rt: time) -> None:
+        if w.get("edit"):
+            await self._wizard_update(ctx, w, rt)
+            return
+        d = w["data"]
+        stype, sdata, deadline, start_at = self._wizard_task_fields(w)
+        task = await self.store.create_task(
+            ctx.user.id, d["place_id"], d["title"], stype, sdata, rt, deadline,
+            start_at=start_at,
+        )
+        await self.store.materialize_occurrences(
+            task, datetime.now(ctx.tz).date(), self.cfg.occurrence_horizon_days, ctx.settings.tz,
+        )
+        place = await self.store.get_place(ctx.user.id, d["place_id"])
+        self.wizards.pop(ctx.user.id, None)
+        await ctx.reply("\n".join([t("wizard_saved", ctx.lang, title=task.title,
+                                     place=place.name if place else "?")]
+                                  + await self._task_lines(ctx, task)),
+                        self._task_open_rows(ctx, task))
+
+    async def _wizard_update(self, ctx: Ctx, w: dict, rt: time) -> None:
+        """Apply one edited field to an existing task and rebuild its future."""
+        from taskshed.core.models import ScheduleType
+
+        task = await self.store.get_task(ctx.user.id, int(w["edit"]))
+        if task is None:
+            self.wizards.pop(ctx.user.id, None)
+            await ctx.reply(t("task_not_found", ctx.lang))
+            return
+        stype, sdata, deadline, start_at = self._wizard_task_fields(w)
+        task.title = w["data"].get("title", task.title)
+        task.place_id = w["data"].get("place_id", task.place_id)
+        task.schedule_type = ScheduleType(stype)
+        task.schedule_data = sdata
+        task.reminder_time = rt
+        task.deadline, task.start_at = deadline, start_at
+        await self.store.save_task(task)
+        # open repeats are recomputed from the new schedule; finished history stays
+        await self.store.drop_open_occurrences(task.id)
+        await self.store.materialize_occurrences(
+            task, datetime.now(ctx.tz).date(), self.cfg.occurrence_horizon_days,
+            ctx.settings.tz)
+        self.wizards.pop(ctx.user.id, None)
+        ctx.suppress_menu = True  # the card below carries the edit buttons
+        await ctx.reply("\n".join([t("edit_saved", ctx.lang, title=task.title)]
+                                  + await self._task_lines(ctx, task)),
+                        self._task_open_rows(ctx, task))
+
+    async def _task_lines(self, ctx: Ctx, task) -> list[str]:
+        """Where/when lines of a task: the when, the reminder, the next date."""
         tz, fmt = ctx.tz, "%d.%m %H:%M"
-        if task.schedule_type == "once":
+        if task.schedule_type == "once" and task.deadline:
             due = task.deadline.astimezone(tz)
             if task.start_at is not None:
                 when = t("save_when_range", ctx.lang,
@@ -752,18 +826,16 @@ class BotApp:
                 anchor = date.fromisoformat(anchor).strftime("%d.%m")
             except ValueError:
                 pass
-            when = t("save_when_every", ctx.lang, n=task.schedule_data["n"],
+            when = t("save_when_every", ctx.lang, n=task.schedule_data.get("n", 1),
                      anchor=anchor)
         elif task.schedule_type == "weekdays":
             when = t("save_when_weekdays", ctx.lang,
                      days=", ".join(t(WD_KEYS[i], ctx.lang)
-                                    for i in sorted(task.schedule_data["weekdays"])))
+                                    for i in sorted(task.schedule_data.get("weekdays", []))))
         else:
-            when = t("save_when_monthly", ctx.lang, day=task.schedule_data["day"])
-        lines = [t("wizard_saved", ctx.lang, title=task.title,
-                   place=place.name if place else "?"), when,
-                 t("save_reminder", ctx.lang,
-                   time=task.reminder_time.strftime("%H:%M"))]
+            when = t("save_when_monthly", ctx.lang, day=task.schedule_data.get("day", 1))
+        lines = [when, t("save_reminder", ctx.lang,
+                         time=task.reminder_time.strftime("%H:%M"))]
         # the first date it will actually appear on — the useful part of a rule
         horizon = max(self.cfg.occurrence_horizon_days,
                       ctx.settings.stats_horizon_days)
@@ -775,7 +847,165 @@ class BotApp:
         if moments:
             lines.append(t("save_next", ctx.lang,
                            when=min(moments).strftime(fmt)))
-        return "\n".join(lines)
+        return lines
+
+    async def _next_moments(self, ctx: Ctx, days: int) -> dict[int, datetime]:
+        """task_id → nearest open occurrence moment (UTC) in the next `days`."""
+        now = datetime.now(UTC)
+        occs = await self.store.occurrences_in_range(
+            ctx.user.id, now, now + timedelta(days=days))
+        out: dict[int, datetime] = {}
+        for occ, task in occs:
+            if occ.status not in ("pending", "in_progress"):
+                continue
+            moment = occurrence_moment(occ)
+            if task.id not in out or moment < out[task.id]:
+                out[task.id] = moment
+        return out
+
+    # ---------- task editor ----------
+
+    EDIT_TABS = ("future", "recurring", "past", "all")
+    # field → wizard step it is edited with
+    EDIT_STEPS = {"title": "title", "place": "place", "schedule": "schedule",
+                  "when": "when", "reminder": "reminder", "weekdays": "days"}
+    # fields that end right after the value (the rest keep the wizard chain)
+    EDIT_SINGLE = ("title", "place", "reminder", "weekdays")
+
+    def _edit_wizard(self, task, tab: str) -> dict:
+        """Wizard state pre-filled from an existing task (edit mode)."""
+        d: dict = {"title": task.title, "place_id": task.place_id,
+                   "stype": str(task.schedule_type), "rt": task.reminder_time}
+        if task.schedule_type == "once":
+            if task.deadline:
+                d["deadline"] = task.deadline
+            if task.start_at:
+                d["start"] = task.start_at
+        elif task.schedule_type == "every_n_days":
+            d["n"] = task.schedule_data.get("n", 1)
+            d["anchor"] = task.schedule_data.get("anchor", "")
+        elif task.schedule_type == "monthly_day":
+            d["day"] = task.schedule_data.get("day", 1)
+        return {"kind": "task", "step": "title", "data": d, "hist": [],
+                "days": set(task.schedule_data.get("weekdays", [])),
+                "edit": task.id, "tab": tab}
+
+    async def _cmd_edit(self, ctx: Ctx, arg: str) -> None:
+        tab = (arg or "").strip().lower()
+        await self._edit_picker(ctx, tab if tab in self.EDIT_TABS else "future")
+
+    async def _edit_picker(self, ctx: Ctx, tab: str, note: str = "") -> None:
+        await self.ensure_materialized(ctx)
+        self._edit_tab[ctx.user.id] = tab
+        horizon = max(self.cfg.occurrence_horizon_days,
+                      ctx.settings.stats_horizon_days)
+        tasks = await self.store.list_tasks(ctx.user.id, active_only=False)
+        upcoming = await self._next_moments(ctx, horizon)
+        past_ids = await self._tasks_with_past(ctx.user.id)
+        tz = ctx.tz
+        picked = []
+        for task in tasks:
+            nxt = upcoming.get(task.id)
+            if tab == "future" and (nxt is None or not task.is_active):
+                continue
+            if tab == "recurring" and (task.schedule_type == "once"
+                                       or not task.is_active):
+                continue
+            if tab == "past" and task.id not in past_ids:
+                continue
+            picked.append((task, nxt))
+        picked.sort(key=lambda p: (p[1] or datetime.max.replace(tzinfo=UTC),
+                                   p[0].title.lower()))
+        rows = []
+        for task, nxt in picked[:20]:
+            label = f"✏️ {task.title[:32]}"
+            if nxt:
+                label += f" · {nxt.astimezone(tz):%d.%m}"
+            if task.schedule_type != "once":
+                label += " 🔁"
+            if not task.is_active:
+                label += " ⏸"
+            rows.append([(label, f"edt:{tab}:{task.id}")])
+        tabs = [[(t(f"edit_tab_{x}", ctx.lang), f"etab:{x}")
+                 for x in self.EDIT_TABS[:2]],
+                [(t(f"edit_tab_{x}", ctx.lang), f"etab:{x}")
+                 for x in self.EDIT_TABS[2:]]]
+        text = t("edit_picker_head", ctx.lang, tab=t(f"edit_tab_{tab}", ctx.lang))
+        if note:
+            text = note + "\n\n" + text
+        if not rows:
+            text += "\n" + t("edit_none", ctx.lang)
+        ctx.suppress_menu = True
+        await ctx.reply(text, rows + tabs + [[(t("btn_back", ctx.lang), "menu:back")]])
+
+    async def _tasks_with_past(self, user_id: int) -> set[int]:
+        """Tasks that already have a finished or missed repeat behind them."""
+        now = datetime.now(UTC)
+        occs = await self.store.occurrences_in_range(
+            user_id, now - timedelta(days=730), now)
+        return {task.id for _, task in occs}
+
+    async def _cb_edit_open(self, ctx: Ctx, tab: str, task_id: int) -> None:
+        task = await self.store.get_task(ctx.user.id, task_id)
+        if task is None:
+            await ctx.reply(t("task_not_found", ctx.lang))
+            return
+        self._edit_tab[ctx.user.id] = tab
+        self.wizards[ctx.user.id] = self._edit_wizard(task, tab)
+        ctx.suppress_menu = True
+        await ctx.reply("\n".join([f"✏️ {task.title}"] + await self._task_lines(ctx, task)),
+                        self._task_open_rows(ctx, task))
+
+    def _task_open_rows(self, ctx: Ctx, task) -> ButtonRows:
+        """Edit buttons of one task: every field, delete, back to the list."""
+        tab = self._edit_tab.get(ctx.user.id, "future")
+        rows = [[(t("edit_f_title", ctx.lang), f"edf:{task.id}:title"),
+                 (t("edit_f_place", ctx.lang), f"edf:{task.id}:place")],
+                [(t("edit_f_schedule", ctx.lang), f"edf:{task.id}:schedule")]]
+        if task.schedule_type == "weekdays":
+            rows.append([(t("edit_f_weekdays", ctx.lang), f"edf:{task.id}:weekdays")])
+        if task.schedule_type == "once":
+            rows.append([(t("edit_f_when", ctx.lang), f"edf:{task.id}:when")])
+        rows.append([(t("edit_f_reminder", ctx.lang), f"edf:{task.id}:reminder")])
+        rows.append([(t("edit_delete", ctx.lang), f"eddel:{tab}:{task.id}")])
+        rows.append([(t("btn_back", ctx.lang), f"etab:{tab}")])
+        return rows
+
+    async def _cb_edit_field(self, ctx: Ctx, task_id: int, field: str) -> None:
+        if field not in self.EDIT_STEPS:
+            return
+        task = await self.store.get_task(ctx.user.id, task_id)
+        if task is None:
+            await ctx.reply(t("task_not_found", ctx.lang))
+            return
+        w = self._edit_wizard(task, self._edit_tab.get(ctx.user.id, "future"))
+        w["step"] = self.EDIT_STEPS[field]
+        if field in self.EDIT_SINGLE:
+            w["only"] = field
+        self.wizards[ctx.user.id] = w
+        if w["step"] == "days":
+            await self._wd_buttons(ctx, w)
+        else:
+            await self._ask_step(ctx, w)
+
+    async def _cb_edit_delete(self, ctx: Ctx, tab: str, task_id: int) -> None:
+        task = await self.store.get_task(ctx.user.id, task_id)
+        if task is None:
+            await ctx.reply(t("task_not_found", ctx.lang))
+            return
+        ctx.suppress_menu = True
+        await ctx.reply(t("edit_delete_ask", ctx.lang, title=task.title),
+                        [[(t("edit_delete_yes", ctx.lang), f"edyes:{tab}:{task_id}")],
+                         [(t("btn_back", ctx.lang), f"edt:{tab}:{task_id}")]])
+
+    async def _cb_edit_delete_yes(self, ctx: Ctx, tab: str, task_id: int) -> None:
+        task = await self.store.get_task(ctx.user.id, task_id)
+        self.wizards.pop(ctx.user.id, None)
+        if task is None or not await self.store.delete_task(task_id, ctx.user.id):
+            await ctx.reply(t("task_not_found", ctx.lang))
+            return
+        await self._edit_picker(ctx, tab,
+                                note=t("task_deleted", ctx.lang))
 
     # ---------- callbacks ----------
 
@@ -800,10 +1030,32 @@ class BotApp:
                 if not w["days"]:
                     await ctx.reply(t("wizard_no_selection", ctx.lang))
                     return
+                if w.get("only") == "weekdays":
+                    # editor: picking the days is the whole change
+                    await self._wizard_finish(ctx, w, w["data"].get("rt", time(9, 0)))
+                    return
                 await self._wizard_ask_reminder(ctx, w)
         elif action == "pdel":
             if await self.store.delete_place(ctx.user.id, int(arg)):
                 await ctx.reply(t("place_removed", ctx.lang))
+        elif action == "edt":  # task editor: open one task's card
+            tab, _, tid = arg.partition(":")
+            if tid.isdigit():
+                await self._cb_edit_open(ctx, tab or "future", int(tid))
+        elif action == "etab":
+            await self._edit_picker(ctx, arg if arg in self.EDIT_TABS else "future")
+        elif action == "edf":  # edit one field of a task
+            tid, _, field = arg.partition(":")
+            if tid.isdigit():
+                await self._cb_edit_field(ctx, int(tid), field)
+        elif action == "eddel":
+            tab, _, tid = arg.partition(":")
+            if tid.isdigit():
+                await self._cb_edit_delete(ctx, tab or "future", int(tid))
+        elif action == "edyes":
+            tab, _, tid = arg.partition(":")
+            if tid.isdigit():
+                await self._cb_edit_delete_yes(ctx, tab or "future", int(tid))
         elif action == "done":
             await self._cb_done(ctx, int(arg))
         elif action == "wip":
@@ -841,6 +1093,12 @@ class BotApp:
             w = self.wizards.get(ctx.user.id)
             if w and w.get("kind") == "task":
                 self.wizards.pop(ctx.user.id, None)
+                if w.get("edit"):
+                    # in the editor cancelling means "back to that task"
+                    await self._cb_edit_open(ctx,
+                                             self._edit_tab.get(ctx.user.id, "future"),
+                                             int(w["edit"]))
+                    return
                 await ctx.reply(t("wizard_cancelled", ctx.lang))
         elif action == "menu" and arg == "back":
             # submenu screens offer ⬅️ Назад: return to the main command menu
@@ -918,6 +1176,10 @@ class BotApp:
         w = self.wizards.get(ctx.user.id)
         if w and w.get("kind") == "task" and w.get("step") == "place":
             w["data"]["place_id"] = place.id
+            if w.get("only") == "place":
+                # editor: moving the task to another place is the whole change
+                await self._wizard_finish(ctx, w, w["data"].get("rt", time(9, 0)))
+                return
             self._goto(w, "schedule")
             await self._ask_step(ctx, w)
             return

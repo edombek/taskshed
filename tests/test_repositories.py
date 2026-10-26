@@ -132,6 +132,80 @@ class TestTasksAndOccurrences:
         # before the work window opens it stays out of the way
         assert await store.occurrences_today(user.id, date(2026, 10, 25), "Europe/Moscow") == []
 
+class TestTaskEditing:
+    async def test_save_task_roundtrip(self, store):
+        user = await make_user(store)
+        places = await store.list_places(user.id)
+        home, work = places[0], places[1]
+        msk = ZoneInfo("Europe/Moscow")
+        start = datetime(2026, 10, 27, 10, 0, tzinfo=msk)
+        due = datetime(2026, 10, 27, 18, 30, tzinfo=msk)
+        task = await store.create_task(user.id, home.id, "T", ScheduleType.ONCE,
+                                       {}, time(9, 0), deadline=due, start_at=start)
+        task.title, task.place_id = "Полка", work.id
+        task.reminder_time = time(11, 15)
+        task.start_at = start + timedelta(hours=2)
+        task.deadline = due + timedelta(days=1)
+        assert await store.save_task(task)
+        got = await store.get_task(user.id, task.id)
+        assert got.title == "Полка" and got.place_id == work.id
+        assert got.reminder_time == time(11, 15)
+        # stored naive-UTC, handed back tz-aware
+        assert got.start_at == start.astimezone(UTC) + timedelta(hours=2)
+        assert got.deadline == (due + timedelta(days=1)).astimezone(UTC)
+        vk_user, _ = await store.register_account("vk", "999")
+        assert await store.get_task(vk_user.id, task.id) is None
+
+    async def test_switching_schedule_type(self, store):
+        user = await make_user(store)
+        work = (await store.list_places(user.id))[1]
+        task = await store.create_task(
+            user.id, work.id, "T", ScheduleType.ONCE, {}, time(9, 0),
+            deadline=datetime(2026, 10, 27, 12, 0, tzinfo=UTC))
+        task.schedule_type = ScheduleType.EVERY_N_DAYS
+        task.schedule_data = {"n": 2, "anchor": "2026-10-26"}
+        task.deadline = task.start_at = None
+        await store.save_task(task)
+        got = await store.get_task(user.id, task.id)
+        assert got.schedule_type == ScheduleType.EVERY_N_DAYS
+        assert got.schedule_data == {"n": 2, "anchor": "2026-10-26"}
+        assert got.deadline is None and got.start_at is None
+
+    async def test_drop_open_occurrences_keeps_history(self, store):
+        user = await make_user(store)
+        work = (await store.list_places(user.id))[1]
+        task = await store.create_task(user.id, work.id, "T", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": "2026-10-25"}, time(9, 0))
+        assert await store.materialize_occurrences(task, date(2026, 10, 25), 2,
+                                                   "Europe/Moscow") == 3
+        occs = await store.occurrences_in_range(
+            user.id, datetime(2026, 10, 25, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC))
+        await store.mark_done(occs[0][0].id, "telegram")
+        await store.skip(occs[1][0].id)
+        assert await store.drop_open_occurrences(task.id) == 1
+        left = await store.occurrences_in_range(
+            user.id, datetime(2026, 10, 25, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC))
+        assert {o.status for o, _ in left} == {"done", "skipped"}
+
+    async def test_delete_task_cascades_to_occurrences(self, store):
+        from sqlalchemy import text
+
+        user = await make_user(store)
+        work = (await store.list_places(user.id))[1]
+        task = await store.create_task(user.id, work.id, "T", ScheduleType.EVERY_N_DAYS,
+                                       {"n": 1, "anchor": "2026-10-25"}, time(9, 0))
+        await store.materialize_occurrences(task, date(2026, 10, 25), 1, "Europe/Moscow")
+        occs = await store.occurrences_in_range(
+            user.id, datetime(2026, 10, 25, tzinfo=UTC), datetime(2026, 10, 27, tzinfo=UTC))
+        await store.mark_done(occs[0][0].id, "telegram")
+        assert await store.delete_task(task.id, user.id)
+        async with store._engine.connect() as conn:
+            for table in ("task_occurrences", "completions"):
+                left = (await conn.execute(
+                    text(f"SELECT COUNT(*) FROM {table}"))).scalar()
+                assert left == 0, f"{table} left {left} rows after deleting the task"
+
+
 class TestLocation:
     async def test_set_get_location(self, store):
         user = await make_user(store)

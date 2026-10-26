@@ -72,6 +72,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and its value are shown in Russian on the settings screen («Режим:
   по временам (09:00 13:00)»), and the prompts explain what the values
   mean; heatmap weekday/month labels are localized (Пн/Ср/Пт, янв…дек).
+- **✏️ Task editor** (`/изменить`): every task opens as a card whose buttons edit
+  each item — title, place, repeat rule, work window (start + ready-by), reminder
+  time — plus «🗑 Удалить задачу» behind a confirmation. Tabs switch between
+  🔜 upcoming, 🔁 recurring, 📚 past and 📋 all tasks, so history is one tap away.
+  Changing a schedule drops the repeats that were never worked and re-materializes
+  them from the new rule; finished/missed history stays.
+- **`PRAGMA foreign_keys=ON`** for SQLite: `ON DELETE CASCADE` now really fires, so
+  deleting a task no longer leaves its occurrences and completions behind.
 - **Task saved = task shown**: after the wizard the bot answers with a card of
   what was created — title, place, the work window («с 26.10 10:00 до 26.10 23:59»)
   or the repeat rule, the reminder moment and the first date it will fire on.

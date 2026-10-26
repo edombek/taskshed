@@ -21,6 +21,10 @@ platform-independent core.
 - **One ⚙️ settings screen** per user: reminders (fixed times or interval
   mode), quiet hours, time zone, how long your chosen location stays valid,
   how far ahead charts are drawn, language and the **platform linking status** (Telegram/VK).
+- **Task editor** (`/edit`): change the title, place, repeat rule, work window
+  or reminder of any task, or delete it — upcoming, recurring and past tasks
+  are one tab away. Editing a schedule rebuilds the open repeats and keeps the
+  finished history.
 - Only the newest screen stays clickable: keyboards of older messages are
   stripped automatically.
 - **No noise**: if you have no tasks today, or none match your current place,
@@ -71,6 +75,7 @@ VK API uses ordinary HTTPS, so VK takes a regular HTTP/SOCKS5 proxy URL.
 | `/where` (RU: `/гдея`) | set current place |
 | `/tasks` (`/задачи`) | tasks for the current place |
 | `/task` (`/задача`) | create a task (guided dialog) |
+| `/edit` (`/изменить`) | change any field of a task, or delete it |
 | `/places` (`/места`) | manage places |
 | `/settings` (`/настройки`; `/reminders` alias) | all user settings |
 | `/stats` (`/статистика`) `[week\|month\|year\|all] [csv\|xlsx\|chart]` | reports |
@@ -116,7 +121,7 @@ graph LR
     end
 
     subgraph Core
-        H[bot/app.py BotApp<br/>commands · wizards · buttons]
+        H[bot/app.py BotApp<br/>commands · wizards · task editor · buttons]
         C[core/<br/>models · scheduling · stats]
         S[scheduler/jobs.py<br/>minute tick, silence rules]
         ST[stats/charts.py · stats/export.py<br/>PNG · CSV · XLSX]
