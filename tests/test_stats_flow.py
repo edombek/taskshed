@@ -237,10 +237,40 @@ class TestChartHorizonAndHours:
         assert "fmt:hours:week" in flat and "hrs:7" in flat
         f = await send(env, cb="hrs:7")
         assert any(m.image for m in f.sent)
-        assert "hrs:-7" in [cb for row in f.last_buttons() for _, cb in row]
-        occs = await store.occurrences_in_range(
-            user.id, datetime.now(UTC), datetime.now(UTC) + timedelta(days=20))
-        assert when in [occ.due_at for occ, _ in occs]
+        nav = [cb for row in f.last_buttons() for _, cb in row]
+        # the paging buttons carry the shift of the week they draw: back to
+        # this one, or a whole week further — not a fixed ±7 from today
+        assert "hrs:0" in nav and "hrs:14" in nav
+        labels = {cb: lbl for row in f.last_buttons() for lbl, cb in row}
+        assert labels.get("menu:back") == "✅ Готово"  # the walk ends with Готово
+
+    async def test_hour_map_pages_many_weeks_unbounded(self, env):
+        # five taps of «next» reach a task five weeks out; the drawn window
+        # and the buttons move with every tap, nothing stops at ±1 week
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await store.update_settings(user.id, stats_horizon_days=1)
+        today = datetime.now(UTC).date()
+        when = datetime.combine(today + timedelta(days=31), time(15, 0),
+                                tzinfo=UTC)
+        await store.create_task(user.id, pid, "Командировка", ScheduleType.ONCE,
+                                {}, time(9, 0), deadline=when, start_at=when)
+        await send(env, "/статистика неделя")
+        for shift in (7, 14, 21, 28):
+            f = await send(env, cb=f"hrs:{shift}")
+        first = today + timedelta(days=25)  # shift 28: today-3+28
+        last = first + timedelta(days=6)
+        img = next(m for m in f.sent if m.image)
+        assert f"{first:%d.%m} — {last:%d.%m}" in img.text  # the right week drew
+        nav = [cb for row in f.last_buttons() for _, cb in row]
+        assert f"hrs:{28 + 7}" in nav and "hrs:21" in nav
+        # the labels say which week each button leads to
+        labels = [lbl for row in f.last_buttons() for lbl, cb in row
+                  if cb.startswith("hrs:")]
+        nxt = next(lbl for lbl in labels if "➡️" in lbl)
+        assert f"{first + timedelta(days=7):%d.%m}" in nxt
 
     async def test_planned_week_is_planned_whole(self, env):
         # a week the horizon touches is filled to its Sunday: no planned square

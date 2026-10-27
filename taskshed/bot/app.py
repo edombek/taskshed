@@ -168,6 +168,12 @@ class BotApp(
     def _back_only(self, ctx: Ctx) -> ButtonRows:
         return [[(t("btn_back", ctx.lang), "menu:back")]]
 
+    def _finish_row(self, ctx: Ctx) -> ButtonRows:
+        """✅ Готово on the last level of a menu walk: it ends the walk and
+        hands the main menu back. Inside a dialog ⬅️ Назад still means "one
+        step up", but a screen that can only return to the menu says Готово."""
+        return [[(t("btn_finish", ctx.lang), "menu:back")]]
+
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
         if not arg:
@@ -277,6 +283,8 @@ class BotApp(
             await self._stats_show(ctx, p, fmt)
         elif action == "hrs":
             await self._hours_week(ctx, int(arg))
+        elif action == "tas":
+            await self._cb_all_tasks(ctx)
         elif action == "dt":
             await self._cb_date(ctx, int(arg))
         elif action == "cfm":

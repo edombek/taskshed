@@ -18,8 +18,8 @@ class SettingsMixin:
             return
         ctx.suppress_menu = True
         await ctx.reply(t("lang_menu", ctx.lang),
-                        [[("Русский", "lang:ru"), ("English", "lang:en")],
-                         [(t("btn_back", ctx.lang), "menu:back")]])
+                        [[("Русский", "lang:ru"), ("English", "lang:en")]]
+                        + self._finish_row(ctx))
 
     async def _set_lang(self, ctx: Ctx, lang: str) -> None:
         await self.store.set_language(ctx.user.id, lang)
@@ -70,8 +70,8 @@ class SettingsMixin:
                 rows.append([(t("btn_unlink", ctx.lang,
                                  platform=self._platform_label(str(acc.platform))),
                               f"rem:unlink:{acc.id}")])
-        rows.append([(t("btn_back", ctx.lang), "menu:back")])
-        ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
+        rows += self._finish_row(ctx)
+        ctx.suppress_menu = True  # this screen *is* a menu: ✅ Готово closes it
         key = (ctx.user.id, ctx.account.id)
         mid = self._rem_msgs.get(key)
         # other keyboards of this chat go stale; this one is re-rendered below

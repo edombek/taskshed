@@ -247,3 +247,84 @@ class TestNoticeScreen:
         assert any(any(cb.startswith("cmd:") for row in m.buttons for _, cb in row)
                    for m in f.sent)
         assert not app._fin_msgs         # the screen is closed
+
+
+class TestAllTasksSummary:
+    """🌍 «Все задачи»: открытые повторы изо всех местным одним экраном."""
+
+    async def _two_places(self, env, n=1):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        work = await store.add_place(user.id, "Работа")
+        await store.set_location(user.id, home)
+        anchor = datetime.now(UTC).date().isoformat()
+        for pid, title in ((home, "Полить"), (work.id, "Отчёт")):
+            task = await store.create_task(
+                user.id, pid, title, ScheduleType.EVERY_N_DAYS,
+                # a late clock: today's repeat is open whatever the hour
+                {"n": n, "anchor": anchor}, time(23, 0), notify_before_min=120)
+            await store.materialize_occurrences(task,
+                                                datetime.now(UTC).date(), 1)
+        return app, store, fake, user
+
+    async def _footer_of(self, f):
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert flat == ["fin:", "tas:all"]
+
+    async def test_notice_footer_offers_the_all_places_view(self, env):
+        await self._two_places(env)
+        f = await send(env, "/задачи")
+        await self._footer_of(f)
+        f = await send(env, cb="tas:all")
+        text = f.texts()[0]
+        assert "Полить" in text and "Отчёт" in text   # both places on one screen
+        assert "Дом" in text and "Работа" in text     # grouped under place heads
+        await self._footer_of(f)                      # and it exits the same way
+        f = await send(env, cb="fin:")
+        assert any(cb.startswith("cmd:")
+                   for row in f.last_buttons() for _, cb in row)
+
+    async def test_summary_lists_only_open_rows(self, env):
+        # every-10-days keeps each task to one row inside the horizon
+        _, store, _, user = await self._two_places(env, n=10)
+        today = datetime.now(UTC).date()
+        rows = await store.occurrences_today(user.id, today)
+        done = [o for o, tk in rows if tk.title == "Полить"][0]
+        await store.mark_done(done.id, "telegram")
+        f = await send(env, cb="tas:all")
+        assert "Полить" not in f.texts()[0]   # the finished row is gone for good
+        assert "Отчёт" in f.texts()[0]
+
+    async def test_notice_without_tappable_tasks_still_closes(self, env):
+        # the current place has nothing today: the notice is header + brief
+        # lines, and it must still carry «Готово» — without it the user has
+        # no way out of the screen
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        work = await store.add_place(user.id, "Работа")
+        await store.set_location(user.id, work.id)
+        task = await store.create_task(
+            user.id, home, "Полить", ScheduleType.EVERY_N_DAYS,
+            {"n": 1, "anchor": datetime.now(UTC).date().isoformat()},
+            time(23, 0), notify_before_min=120)
+        await store.materialize_occurrences(task,
+                                            datetime.now(UTC).date(), 1)
+        f = await send(env, "/задачи")
+        await self._footer_of(f)
+        texts = "\n".join(m.text for m in f.sent)
+        assert "Полить" in texts and "Работа" in texts  # current place is «Работа»
+
+    async def test_empty_today_offers_the_all_button_and_the_menu(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        await store.set_location(user.id,
+                                 (await store.list_places(user.id))[0].id)
+        f = await send(env, "/задачи")
+        assert "tas:all" in [cb for row in prev_buttons(f) for _, cb in row]
+        assert any(cb.startswith("cmd:")
+                   for row in f.last_buttons() for _, cb in row)

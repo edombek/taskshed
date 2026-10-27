@@ -36,8 +36,7 @@ class ReportsMixin:
                  (t("btn_per_month", ctx.lang), "per:month")],
                 [(t("btn_per_year", ctx.lang), "per:year"),
                  (t("btn_per_all", ctx.lang), "per:all")],
-                [(t("btn_back", ctx.lang), "menu:back")],
-            ])
+            ] + self._finish_row(ctx))
             return
         await self._stats_show(ctx, period, fmt)
 
@@ -96,9 +95,8 @@ class ReportsMixin:
         rows += [
             [(t("btn_fmt_csv", ctx.lang), f"fmt:csv:{name}"),
              (t("btn_fmt_xlsx", ctx.lang), f"fmt:xlsx:{name}")],
-            [(t("btn_back", ctx.lang), "menu:back")],
         ]
-        await ctx.reply(body, rows)
+        await ctx.reply(body, rows + self._finish_row(ctx))
 
     async def _by_place(self, user_id: int,
                         occs: list) -> list[tuple[str, list]]:
@@ -157,19 +155,36 @@ class ReportsMixin:
             first = last - timedelta(days=24)
         return first, last
 
-    def _hours_rows(self, ctx: Ctx) -> ButtonRows:
-        return [[(t("btn_hours_prev", ctx.lang), "hrs:-7"),
-                 (t("btn_hours_next", ctx.lang), "hrs:7")]] + self._back_only(ctx)
+    def _hours_rows(self, ctx: Ctx, shift: int,
+                    first: date, last: date) -> ButtonRows:
+        """Paging buttons of the hour map.
 
-    async def _hours_nav(self, ctx: Ctx, first: date, last: date) -> None:
+        Each carries the shift of the week it will draw next, so the walk
+        never bottoms out: every tap moves the whole window another week and
+        the buttons redraw around the new one. The labels name the week they
+        lead to, the old screen loses its buttons on the way.
+        """
+        prev_f = first - timedelta(days=7)
+        next_l = last + timedelta(days=7)
+        return [[(f"⬅️ {prev_f:%d.%m}–{prev_f + timedelta(days=6):%d.%m}",
+                  f"hrs:{shift - 7}"),
+                 (f"{first + timedelta(days=7):%d.%m}–{next_l:%d.%m} ➡️",
+                  f"hrs:{shift + 7}")]] + self._finish_row(ctx)
+
+    async def _hours_nav(self, ctx: Ctx, shift: int,
+                         first: date, last: date) -> None:
         """Say which week the hour map drew, and offer the neighbouring ones."""
         ctx.suppress_menu = True
         await ctx.reply(t("stats_hours_nav", ctx.lang,
                           span=f"{first:%d.%m} — {last:%d.%m}"),
-                        self._hours_rows(ctx))
+                        self._hours_rows(ctx, shift, first, last))
 
     async def _hours_week(self, ctx: Ctx, shift: int) -> None:
-        """Hour maps of a week moved by whole weeks: the week ahead, or before."""
+        """Hour maps of a week moved by whole weeks: the week ahead, or before.
+
+        `shift` is how many days the week's middle sits from today's, so the
+        buttons can keep adding whole weeks to it without limit.
+        """
         tzinfo = ZoneInfo(ctx.settings.tz)
         today = datetime.now(tzinfo).date()
         first = today - timedelta(days=3 - shift)
@@ -187,12 +202,12 @@ class ReportsMixin:
                 t("stats_no_data", ctx.lang) + "\n"
                 + t("stats_week_range", ctx.lang,
                     span=f"{first:%d.%m} — {last:%d.%m}"),
-                self._hours_rows(ctx))
+                self._hours_rows(ctx, shift, first, last))
             return
         for place, group in await self._by_place(ctx.user.id, occs):
             await self._stats_file(ctx, group, "week", "hours", start, end,
                                    place, (first, last))
-        await self._hours_nav(ctx, first, last)
+        await self._hours_nav(ctx, shift, first, last)
 
     async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str,
                           start: datetime, end: datetime, place: str,

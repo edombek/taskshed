@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **The menu walk always ends with ✅ Готово**: on the last level of a walk
+  (stats screens, the hour-map navigator, the task-editor picker, the settings
+  screen, the language menu) the exit button is «Готово» → main menu;
+  ⬅️ Назад now only moves one step up inside a dialog. A stale ✔️ Готово on
+  the places screen answers again instead of going silent.
+- **The hour map pages without a limit**: each paging button carries the week
+  shift it will draw next and names its dates, so taps keep moving the window
+  forward/back week by week; the old navigator loses its buttons as always.
+- **🌍 «Все задачи» in every task notice** (and on an empty day): one screen
+  with the open repeats of *every* place grouped by place; the same footer
+  (Готово / Все задачи) closes or refreshes it. The notice footer with
+  «Готово» is now sent even when the current place had nothing tappable.
 - **Every task kind has a deadline and a warning lead.** Four kinds — one-off,
   every N days, by weekdays, every M of the month — all end with the same two
   answers: the deadline (a moment for a one-off, a `deadline_time` clock on each

@@ -9,7 +9,7 @@ round and hands the main menu back.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from taskshed.bot.context import Ctx
@@ -41,7 +41,10 @@ class DigestMixin:
         mine = [(o, task) for o, task in rows if task.place_id == place.id]
         others = [(o, task) for o, task in rows if task.place_id != place.id]
         if not mine and not others:
-            await ctx.reply(t("tasks_empty", ctx.lang, place=place.name))
+            # nothing here today: still offer the walk out — the menu follows
+            # this reply, and 🌍 checks the other places right from here
+            await ctx.reply(t("tasks_empty", ctx.lang, place=place.name),
+                            [[(t("btn_all_tasks", ctx.lang), "tas:all")]])
             return
         ctx.suppress_menu = True  # the notice ends with its own «Готово»
         await self._send_notice(ctx.messenger, ctx.account, ctx.user.id, ctx.lang,
@@ -121,6 +124,42 @@ class DigestMixin:
         self._fin_msgs.pop((ctx.user.id, ctx.account.id), None)
         ctx.suppress_menu = True  # the menu below *is* the follow-up
         await ctx.reply(t("menu_ask_more", ctx.lang), self._menu_rows(ctx.lang))
+
+    async def _cb_all_tasks(self, ctx: Ctx) -> None:
+        """🌍 «Все задачи»: open rows of every place, grouped, no buttons.
+
+        The notice shows the current place in full and the others in brief;
+        this is the answer to "then show me everything" — every open repeat
+        from today to the horizon, each place its own block.
+        """
+        await self.ensure_materialized(ctx)
+        tz = ctx.tz
+        start = datetime.combine(datetime.now(tz).date(), time.min, tzinfo=tz)
+        horizon = max(self.cfg.occurrence_horizon_days,
+                      ctx.settings.stats_horizon_days)
+        occs = await self.store.occurrences_in_range(
+            ctx.user.id, start, datetime.now(UTC) + timedelta(days=horizon))
+        open_rows = [(o, tk) for o, tk in occs
+                     if o.status in ("pending", "in_progress", "missed")]
+        ctx.suppress_menu = True  # the screen owns its «Готово» and «Все задачи»
+        footer = self._notice_footer(ctx.lang)
+        if not open_rows:
+            await ctx.reply(t("tasks_all_empty", ctx.lang), footer)
+            return
+        names = {p.id: p.name for p in await self.store.list_places(ctx.user.id)}
+        groups: dict[int, list] = {}
+        for occ, tk in open_rows:
+            groups.setdefault(tk.place_id, []).append((occ, tk))
+        lines = [t("tasks_all_header", ctx.lang)]
+        for pid in sorted(groups, key=lambda k: names.get(k, "?").lower()):
+            rows = sorted(groups[pid], key=lambda r: r[0].due_at)
+            lines.append(t("tasks_all_place", ctx.lang, place=names.get(pid, "?")))
+            for occ, tk in rows[:NOTICE_OTHERS_LIMIT]:
+                lines.append(self._task_line(ctx.lang, tz, occ, tk))
+            if len(rows) > NOTICE_OTHERS_LIMIT:
+                lines.append(t("notif_more", ctx.lang,
+                               n=len(rows) - NOTICE_OTHERS_LIMIT))
+        await ctx.reply("\n".join(lines), footer)
 
     # ---------- one task, one message ----------
 
@@ -228,7 +267,6 @@ class DigestMixin:
         """Header + one message per task of this place + brief others + «Готово»."""
         await self._strip_keyboards(messenger, acc, user_id)
         await messenger.send_text(acc, header)
-        armed = False
         for occ, task in mine:
             text = self._task_line(lang, tz, occ, task)
             rows = self._task_rows(lang, occ)
@@ -238,18 +276,21 @@ class DigestMixin:
             mid = await messenger.send_buttons(acc, text, rows)
             self._track_kb(user_id, acc, mid, text)
             self._track_tl(user_id, acc, mid, occ.id)
-            armed = True
         if others:
             names = {p.id: p.name for p in await self.store.list_places(user_id)}
             await messenger.send_text(acc, self._others_block(lang, tz, others, names))
-        if armed:
-            # the round ends when the user says so — one «Готово» under all of it
-            text = t("notif_footer", lang)
-            mid = await messenger.send_buttons(
-                acc, text, [[(t("btn_finish", lang), "fin:")]])
-            self._track_kb(user_id, acc, mid, text)
-            if mid:
-                self._fin_msgs[(user_id, acc.id)] = mid
+        # the round ends when the user says so: «Готово» hands the menu back,
+        # «Все задачи» widens the view to every place — sent even when this
+        # place had nothing to tap, otherwise the screen would have no exit
+        text = t("notif_footer", lang)
+        mid = await messenger.send_buttons(acc, text, self._notice_footer(lang))
+        self._track_kb(user_id, acc, mid, text)
+        if mid:
+            self._fin_msgs[(user_id, acc.id)] = mid
+
+    def _notice_footer(self, lang: str) -> ButtonRows:
+        return [[(t("btn_finish", lang), "fin:"),
+                 (t("btn_all_tasks", lang), "tas:all")]]
 
     async def send_notification(self, user_id: int, settings: UserSettings,
                                 place: PlaceDC, rows, *, morning: bool = False,

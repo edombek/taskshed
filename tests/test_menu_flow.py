@@ -67,7 +67,7 @@ class TestMenuFollowUp:
         flat = [cb for row in prev_buttons(f) for _, cb in row]
         assert any(cb.startswith("done:") for cb in flat)
         flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert flat == ["fin:"]
+        assert flat == ["fin:", "tas:all"]  # close the round, or see everything
         # «Готово» is what hands the menu back
         f = await send(env, cb="fin:")
         assert "cmd:task" in [cb for row in f.last_buttons() for _, cb in row]
@@ -93,6 +93,10 @@ class TestSubmenuBack:
         assert len(f.sent) == 1  # no "anything else?" under a submenu screen
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "menu:back" in flat
+        # the last level of the walk says «Готово», not «Назад»
+        labels = [lbl for row in f.last_buttons() for lbl, cb in row
+                  if cb == "menu:back"]
+        assert labels == ["✅ Готово"]
         f = await send(env, cb="menu:back")
         assert len(f.sent) == 1  # the main menu answer does not repeat itself
         flat = [cb for row in f.last_buttons() for _, cb in row]

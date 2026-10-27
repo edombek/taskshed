@@ -28,8 +28,13 @@ platform-independent core.
   inside its own message.
 - **One message per task**: a notice is the header, then one message per task of
   your current place with its own buttons, then the other places as one brief
-  line-up, and a single ✅ Готово that ends the round and brings the menu back.
+  line-up, and always a footer: ✅ Готово ends the round and brings the main
+  menu back, 🌍 All tasks shows the open tasks of **every** place on one screen.
   Tapping a button re-draws that very message instead of adding another one.
+- **Every walk has an exit**: the last level of any menu walk ends with
+  ✅ Готово back to the main menu (⬅️ Назад only moves one step up inside a
+  dialog), and the hour map pages week by week **without a limit** — each
+  paging button names the week it leads to.
 - **Two moments of their own**: a **morning digest** at a time you set (everything
   due today, everything whose warning opened today, and everything whose warning
   already passed while the deadline is still ahead), and a **repeat every T
@@ -60,8 +65,9 @@ platform-independent core.
   as far as real tasks go) plus an **hour-level map for short periods** that
   marks missed and still-planned work and outlines the hour you are standing
   in; its rows are the weekdays of the sliding week — three days back, today,
-  three ahead — and **⬅️/➡️ buttons page it week by week**, so next week's plan
-  is one tap away. Both maps name their axes, and the caption under each
+  three ahead — and **⬅️/➡️ buttons page it week by week without a limit**, the
+  label of each button naming the week it leads to. Both maps name their axes,
+  and the caption under each
   picture explains the colors.
 - **Multi-account**: link your Telegram and VK identities with a one-time
   code (`/link`); data and reminders are shared.

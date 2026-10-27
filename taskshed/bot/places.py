@@ -90,9 +90,15 @@ class PlacesMixin:
         return await self._edit_places_msg(ctx, note + "\n\n" + text, rows) is not None
 
     async def _cb_places_close(self, ctx: Ctx) -> None:
-        """✔️ Готово: leave the screen — the keyboard goes away, no reply."""
+        """✔️ Готово: leave the screen — the keyboard goes away, menu back."""
         mid = self._pl_msgs.pop((ctx.user.id, ctx.account.id), None)
+        self.wizards.pop(ctx.user.id, None)
         if not mid:
+            # an old copy of the screen (restart, stripped bookkeeping):
+            # the button must still lead somewhere, never silence
+            ctx.suppress_menu = True
+            await ctx.reply(t("menu_ask_more", ctx.lang),
+                            self._menu_rows(ctx.lang))
             return
         live = self._kb_msgs.get((ctx.user.id, ctx.account.id), {})
         try:
@@ -100,7 +106,6 @@ class PlacesMixin:
         except Exception:
             pass
         live.pop(mid, None)
-        self.wizards.pop(ctx.user.id, None)
         ctx.replied = True
         ctx.suppress_menu = True
 

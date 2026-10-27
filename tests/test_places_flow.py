@@ -62,6 +62,18 @@ class TestPlacesScreen:
         user = await store.get_user_by_account("telegram", PID)
         assert [p.name for p in await store.list_places(user.id)] == ["Дом"]
 
+    async def test_close_on_a_stale_screen_still_returns_the_menu(self, env):
+        # an old copy of the screen (restart, lost bookkeeping): its ✔️ Готово
+        # must still lead somewhere — never silence
+        app, _, fake = env
+        await _tap(env, text="/места")
+        await _tap(env, text="Дом")
+        app._pl_msgs.clear()
+        msgs = await _tap(env, cb="pl:close")
+        assert any(m.buttons and any(cb.startswith("cmd:")
+                                     for row in m.buttons for _, cb in row)
+                   for m in msgs)
+
 
 def ctx_gone(app) -> bool:
     return app.wizards.get(1) is None or app.wizards[1].get("kind") != "addplace"

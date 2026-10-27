@@ -200,6 +200,19 @@ Checklist of the implementation roadmap. EN summary in
       «Готово» inside a notice, `/настройки` morning moment / T / tz (the open
       repeats must move with the zone).
 
+## Stage 10 — Menu walk exits, hour-map paging, all-places view ✅
+- [x] ✅ Готово on the last level of every menu walk (`menu:back` → main
+      menu): stats period/format screens, hour-map navigator, editor picker,
+      settings, language menu; ⬅️ Назад now stays inside a dialog only.
+- [x] The notice footer with «Готово» is sent even when the current place has
+      nothing tappable (brief-others-only notice still closes); a stale
+      ✔️ Готово on the places screen returns the menu instead of silence.
+- [x] The hour map pages whole weeks in both directions without a limit: each
+      button carries the shift of the week it draws, labels name its dates,
+      and the plan for far weeks is materialized on demand.
+- [x] 🌍 «Все задачи» (`tas:all`): open occurrences from today to the horizon,
+      grouped by place — offered in the notice footer and on an empty day.
+
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
 - Task-creation wizard state is in-memory (lost on restart).

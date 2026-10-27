@@ -94,7 +94,7 @@ class EditorMixin:
         if not rows:
             text += "\n" + t("edit_none", ctx.lang)
         ctx.suppress_menu = True
-        await ctx.reply(text, rows + tabs + [[(t("btn_back", ctx.lang), "menu:back")]])
+        await ctx.reply(text, rows + tabs + self._finish_row(ctx))
 
     async def _tasks_with_past(self, user_id: int) -> set[int]:
         """Tasks that already have a finished or missed repeat behind them."""

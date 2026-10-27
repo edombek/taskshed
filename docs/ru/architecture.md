@@ -261,7 +261,7 @@ sequenceDiagram
         else fresh
             Core->>Core: notice = tasks of the current place in full,<br/>tasks of other places in brief
         end
-        Core->>Msg: notice header + one message per task of this place<br/>+ one brief line-up for the others + «Готово»<br/>(older keyboards of this chat get disarmed)
+        Core->>Msg: notice header + one message per task of this place<br/>+ one brief line-up for the others + footer<br/>[✅ Готово][🌍 Все задачи] (older keyboards get disarmed)
         Msg->>U: 🌅 Доброе утро. Задачи «Работа» на сегодня:<br/>📌 Отчёт — до 18:00 [✅ Готово][⏭ Пропустить][💤 Позже][▶ В работе]<br/>📌 Созвон — до 12:00 ⚠️просрочено [✅][⏭][💤][▶]<br/>📍 Другие места: • Дом: Полить цветы — до 20:00<br/>✅ Готово
     end
     U->>Msg: "done:42" button on a task's own message
@@ -272,6 +272,8 @@ sequenceDiagram
     U->>Msg: "snz:42:60" → the notice moment of this row moves out by an hour,<br/>the every-T repeat picks the task up again after that
     U->>Msg: "skip:42" → status=skipped: «⏭пропущено»,<br/>keyboard off, never flipped to missed, no penalty in stats
     U->>Msg: "fin:" under the notice → the status round ends,<br/>the main menu returns and every keyboard of the notice is disarmed
+    U->>Msg: "tas:all" → open rows of every place, grouped by place<br/>on one screen — the same footer closes it
+    Note over U,Core: the last level of every menu walk carries ✅ «Готово»<br/>(menu:back) — ⬅️ Назад only moves one step up
 ```
 <!-- mermaid:end reminder-flow -->
 
@@ -287,9 +289,15 @@ sequenceDiagram
    кнопками мест (вопрос модальный: открытый диалог откладывается и
    возвращается после ответа);
 5. уведомление отправляет задачи **текущего места** отдельными сообщениями с
-   кнопками, задачи **остальных мест** — одним кратким списком, и заканчивается
-   одной кнопкой «Готово» (`fin:`), которая закрывает раунд статусов и
-   возвращает главное меню.
+   кнопками, задачи **остальных мест** — одним кратким списком, и всегда
+   заканчивается футером: ✅ «Готово» (`fin:`) закрывает раунд статусов и
+   возвращает главное меню, 🌍 «Все задачи» (`tas:all`) показывает открытые
+   строки **всех** мест, сгруппированные по местам.
+6. на последнем уровне любого перехода по меню стоит ✅ «Готово»
+   (`menu:back` → главное меню); ⬅️ Назад поднимается только на шаг внутри
+   диалога. Почасовая карта листается на целые недели в обе стороны без
+   предела — каждая кнопка листания несёт сдвиг рисуемой недели и называет
+   её даты.
 
 ### Привязка аккаунтов
 
