@@ -143,6 +143,8 @@ Checklist of the implementation roadmap. EN summary in
       axes
 - [x] Every statistic per place (text block + chart + file each); hour map rows
       = weekday names of the sliding week (−3 … +3)
+- [x] Hour map week paging: «⬅️ Пред. неделя» / «След. неделя ➡️», materialized
+      on demand beyond the horizon setting
 - [x] Modal «Где вы сейчас?»: an open wizard/list intent is parked, the place
       answer (button or typed name) resumes it; «⏭ Не сейчас» skips the question
 

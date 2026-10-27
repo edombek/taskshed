@@ -195,5 +195,9 @@
   "hm_thu": "Чт",
   "hm_sat": "Сб",
   "hm_sun": "Вс",
-  "stats_place_line": "📍 {place}:"
+  "stats_place_line": "📍 {place}:",
+  "stats_hours_nav": "🕐 Почасовая карта за {span}. Список ниже листает недели.",
+  "stats_week_range": "Неделя: {span}",
+  "btn_hours_prev": "⬅️ Пред. неделя",
+  "btn_hours_next": "След. неделя ➡️"
 }

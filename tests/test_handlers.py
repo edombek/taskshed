@@ -1474,6 +1474,28 @@ class TestChartHorizonAndHours:
             datetime.now(UTC) + timedelta(days=8), tz)
         assert first == today and (last - first).days <= 24
 
+    async def test_hour_map_pages_to_the_next_week(self, env):
+        # next week's hours are viewable, and its plan is materialized even
+        # when it lies past the horizon setting
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await store.update_settings(user.id, stats_horizon_days=1)
+        today = datetime.now(UTC).date()
+        when = datetime.combine(today + timedelta(days=9), time(15, 0), tzinfo=UTC)
+        await store.create_task(user.id, pid, "Созвон", ScheduleType.ONCE, {},
+                                time(9, 0), deadline=when, start_at=when)
+        f = await send(env, "/статистика неделя")
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "fmt:hours:week" in flat and "hrs:7" in flat
+        f = await send(env, cb="hrs:7")
+        assert any(m.image for m in f.sent)
+        assert "hrs:-7" in [cb for row in f.last_buttons() for _, cb in row]
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC), datetime.now(UTC) + timedelta(days=20))
+        assert when in [occ.due_at for occ, _ in occs]
+
     async def test_planned_week_is_planned_whole(self, env):
         # a week the horizon touches is filled to its Sunday: no planned square
         # may be missing at the right edge while its cell is drawn

@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The hour map pages between weeks**: next to «⏱ График по часам» the stats
+  screen now offers «След. неделя ➡️», and the picture itself comes with
+  «⬅️ Пред. неделя» / «След. неделя ➡️». The week being drawn is named in the
+  caption (04.11 — 10.11), and occurrences for a further week are materialized
+  on demand — the plan shows up even when it lies past `stats_horizon_days`.
+  An empty period no longer hides the format buttons, so the hour screen is
+  still reachable when nothing happened in the window itself.
 - **The hour map marks the present moment**: the hour the user is standing in
   is outlined on today's row and ticked at the exact minute, so a short-period
   chart shows where the finished part stops and the plan begins.

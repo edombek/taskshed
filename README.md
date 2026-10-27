@@ -44,8 +44,9 @@ platform-independent core.
   as far as real tasks go) plus an **hour-level map for short periods** that
   marks missed and still-planned work and outlines the hour you are standing
   in; its rows are the weekdays of the sliding week — three days back, today,
-  three ahead. Both maps name their axes, and the caption under each picture
-  explains the colors.
+  three ahead — and **⬅️/➡️ buttons page it week by week**, so next week's plan
+  is one tap away. Both maps name their axes, and the caption under each
+  picture explains the colors.
 - **Multi-account**: link your Telegram and VK identities with a one-time
   code (`/link`); data and reminders are shared.
 - Chat interfaces in **Russian and English** (`/lang`).

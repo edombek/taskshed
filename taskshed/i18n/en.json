@@ -195,5 +195,9 @@
   "hm_thu": "Thu",
   "hm_sat": "Sat",
   "hm_sun": "Sun",
-  "stats_place_line": "📍 {place}:"
+  "stats_place_line": "📍 {place}:",
+  "stats_hours_nav": "🕐 Hour map for {span}. The buttons below page between weeks.",
+  "stats_week_range": "Week: {span}",
+  "btn_hours_prev": "⬅️ Prev week",
+  "btn_hours_next": "Next week ➡️"
 }

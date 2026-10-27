@@ -425,11 +425,16 @@ class BotApp:
 
     async def _stats_show(self, ctx: Ctx, period: str, fmt: str | None) -> None:
         name, days = PERIODS[period]
+        if fmt == "hours":
+            # the hour map is a screen of its own: it holds one week and pages
+            # between weeks, so it does not depend on the period window below
+            await self._hours_week(ctx, 0)
+            return
         now = datetime.now(UTC)
         start = (now - timedelta(days=days)) if days else datetime(2000, 1, 1, tzinfo=UTC)
         # charts look stats_horizon_days into the future, so planned tasks are
         # visible; text/CSV reports keep describing what already happened
-        chart = fmt in ("chart", "график", "hours")
+        chart = fmt in ("chart", "график")
         # forward: exactly the user's horizon setting; back: the period, but
         # the map only ever reaches as far as real occurrences exist, and a
         # schedule is never planned before the date written inside it
@@ -449,28 +454,33 @@ class BotApp:
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
         # planned (future) occurrences are kept on purpose: they show as
         # pending/«в плане» in reports and as blue insets on the heatmap
-        if not occs:
-            await ctx.reply(t("stats_no_data", ctx.lang))
-            return
         # every report is per place: one chart, one file, one text block each
-        groups = await self._by_place(ctx.user.id, occs)
-        if fmt in ("csv", "xlsx", "chart", "график", "hours"):
-            for place, group in groups:
+        if fmt in ("csv", "xlsx", "chart", "график"):
+            if not occs:
+                await ctx.reply(t("stats_no_data", ctx.lang))
+                return
+            for place, group in await self._by_place(ctx.user.id, occs):
                 await self._stats_file(ctx, group, name, fmt, start, end, place)
             # the files/charts end the answer: the menu follow-up must follow
             ctx.replied = True
             return
+        # text screen + format buttons: the buttons stay even when this period
+        # is empty — the plan may well sit one week further out
+        ctx.suppress_menu = True
+        body = (t("stats_no_data", ctx.lang) if not occs else
+                self._stats_text(ctx, await self._by_place(ctx.user.id, occs), name))
         rows = [[(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")]]
         if name == "week":
-            # short periods also get the hour-level rendering
-            rows.append([(t("btn_fmt_hours", ctx.lang), f"fmt:hours:{name}")])
+            # short periods also get the hour-level rendering: this week, and
+            # a button straight into next week's plan
+            rows.append([(t("btn_fmt_hours", ctx.lang), f"fmt:hours:{name}"),
+                         (t("btn_hours_next", ctx.lang), "hrs:7")])
         rows += [
             [(t("btn_fmt_csv", ctx.lang), f"fmt:csv:{name}"),
              (t("btn_fmt_xlsx", ctx.lang), f"fmt:xlsx:{name}")],
             [(t("btn_back", ctx.lang), "menu:back")],
         ]
-        ctx.suppress_menu = True
-        await ctx.reply(self._stats_text(ctx, groups, name), rows)
+        await ctx.reply(body, rows)
 
     async def _by_place(self, user_id: int,
                         occs: list) -> list[tuple[str, list]]:
@@ -575,12 +585,52 @@ class BotApp:
             first = last - timedelta(days=24)
         return first, last
 
+    def _hours_rows(self, ctx: Ctx) -> ButtonRows:
+        return [[(t("btn_hours_prev", ctx.lang), "hrs:-7"),
+                 (t("btn_hours_next", ctx.lang), "hrs:7")]] + self._back_only(ctx)
+
+    async def _hours_nav(self, ctx: Ctx, first: date, last: date) -> None:
+        """Say which week the hour map drew, and offer the neighbouring ones."""
+        ctx.suppress_menu = True
+        await ctx.reply(t("stats_hours_nav", ctx.lang,
+                          span=f"{first:%d.%m} — {last:%d.%m}"),
+                        self._hours_rows(ctx))
+
+    async def _hours_week(self, ctx: Ctx, shift: int) -> None:
+        """Hour maps of a week moved by whole weeks: the week ahead, or before."""
+        tzinfo = ZoneInfo(ctx.settings.tz)
+        today = datetime.now(tzinfo).date()
+        first = today - timedelta(days=3 - shift)
+        last = first + timedelta(days=6)
+        # a week further out has to be materialized before it can be drawn:
+        # its plan may lie past the horizon setting
+        await self.ensure_materialized(ctx, (last - today).days,
+                                       max(0, (today - first).days))
+        start = datetime.combine(first, time.min, tzinfo=tzinfo)
+        end = datetime.combine(last, time(23, 59), tzinfo=tzinfo)
+        occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
+        ctx.suppress_menu = True
+        if not occs:
+            await ctx.reply(
+                t("stats_no_data", ctx.lang) + "\n"
+                + t("stats_week_range", ctx.lang,
+                    span=f"{first:%d.%m} — {last:%d.%m}"),
+                self._hours_rows(ctx))
+            return
+        for place, group in await self._by_place(ctx.user.id, occs):
+            await self._stats_file(ctx, group, "week", "hours", start, end,
+                                   place, (first, last))
+        await self._hours_nav(ctx, first, last)
+
     async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str,
-                          start: datetime, end: datetime, place: str) -> None:
+                          start: datetime, end: datetime, place: str,
+                          window: tuple[date, date] | None = None
+                          ) -> tuple[date, date] | None:
         """One report of one kind for one place.
 
         Every place gets its own copy: its own chart, its own spreadsheet, its
-        own file name — nothing of «Дом» is mixed into «Работа».
+        own file name — nothing of «Дом» is mixed into «Работа». Returns the day
+        rows the hour map drew, so the caller can offer the neighbouring week.
         """
         import os
         import shutil
@@ -591,6 +641,7 @@ class BotApp:
 
         slug = re.sub(r"[^\w]+", "-", place, flags=re.UNICODE).strip("-") or "place"
         where = "\n" + t("stats_place_line", ctx.lang, place=place)
+        drew: tuple[date, date] | None = None
         tmp = tempfile.mkdtemp(prefix="taskshed_stats_")
         try:
             task_rows = sagg.per_task(past)
@@ -613,15 +664,20 @@ class BotApp:
                 # day rows × hour columns: what a short period really looked like
                 grid = sagg.activity_by_hour(past, ctx.settings.tz)
                 tzinfo = ZoneInfo(ctx.settings.tz)
-                first, last = self._hour_window(period, grid, start, end, tzinfo)
+                first, last = window or self._hour_window(
+                    period, grid, start, end, tzinfo)
                 path = os.path.join(tmp, f"hours-{slug}.png")
                 if not charts.hourly_heatmap(
                         grid, ctx.lang, path, (first, last),
                         datetime.now(tzinfo).date(), datetime.now(tzinfo)):
                     await ctx.reply(t("stats_no_data", ctx.lang))
-                    return
+                    return None
                 await ctx.messenger.send_image(
-                    ctx.account, path, t("stats_hours_caption", ctx.lang) + where)
+                    ctx.account, path,
+                    t("stats_hours_caption", ctx.lang)
+                    + "\n" + t("stats_week_range", ctx.lang,
+                               span=f"{first:%d.%m} — {last:%d.%m}") + where)
+                drew = (first, last)
             else:  # chart: GitHub-style activity map (daily bars retired)
                 heat = os.path.join(tmp, f"activity-{slug}.png")
                 tzinfo = ZoneInfo(ctx.settings.tz)
@@ -637,6 +693,7 @@ class BotApp:
                     ctx.account, heat, t("stats_heat_caption", ctx.lang) + where)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+        return drew
 
     # ---------- wizard ----------
 
@@ -1298,6 +1355,8 @@ class BotApp:
         elif action == "fmt":
             fmt, _, p = arg.partition(":")
             await self._stats_show(ctx, p, fmt)
+        elif action == "hrs":
+            await self._hours_week(ctx, int(arg))
         elif action == "dt":
             await self._cb_date(ctx, int(arg))
         elif action == "now":
