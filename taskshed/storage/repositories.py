@@ -333,9 +333,10 @@ class Store:
     # ---------- occurrences ----------
 
     async def materialize_occurrences(self, task: TaskDC, today: date,
-                                      horizon_days: int, tz: str) -> int:
+                                      horizon_days: int, tz: str,
+                                      back_days: int = 0) -> int:
         tzinfo = ZoneInfo(tz)
-        planned = plan_occurrences(task, today, horizon_days, tzinfo)
+        planned = plan_occurrences(task, today, horizon_days, tzinfo, back_days)
         inserted = 0
         async with self._sf() as s:
             for occ in planned:

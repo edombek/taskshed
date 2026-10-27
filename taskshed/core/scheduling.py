@@ -91,12 +91,24 @@ def occurrence_datetimes(
 
 
 def plan_occurrences(
-    task: Task, today: date, horizon_days: int, tz: ZoneInfo
+    task: Task, today: date, horizon_days: int, tz: ZoneInfo,
+    back_days: int = 0,
 ) -> list[TaskOccurrence]:
-    """Occurrences from today (inclusive) up to horizon — for materialization."""
+    """Occurrences from `back_days` before today up to the horizon.
+
+    Nothing is ever planned before a schedule exists. An every-N-days rule
+    starts at the anchor date written in it (`occurrence_dates` honours it), a
+    one-off at its own moment, and weekday/monthly rules are not reached back
+    into at all — they carry no date of their own, so their history is only
+    what was already materialized while they were running.
+    """
+    start = today
+    if back_days and task.schedule_type in (ScheduleType.EVERY_N_DAYS,
+                                            ScheduleType.ONCE):
+        start = today - timedelta(days=back_days)
     end = today + timedelta(days=horizon_days)
     out = []
-    for d in occurrence_dates(task, today, end, tz):
+    for d in occurrence_dates(task, start, end, tz):
         due_at, reminder_at = occurrence_datetimes(task, d, tz)
         started = task.start_at.astimezone(UTC) if (
             task.schedule_type == ScheduleType.ONCE and task.start_at

@@ -175,10 +175,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A typed ready-by time was refused**: «До какого времени нужно закончить?»
   read a lone `13.00` as a date (month 00) and answered «Не понял», and the same
   happened on the start step. One reader now handles both, in every step.
-- **Repeating tasks were missing days on longer charts**: a month chart looked
-  only `stats_horizon_days` (a week by default) ahead, so occurrences further
-  out had never been materialized and the map lit just the first days. A chart
-  now looks as far ahead as the period it draws (week → 7 days, month → 30,
-  year → 365), never less than the user's horizon, and materializes that whole
-  window first — an every-3-days task is drawn on every planned day of the
-  month, not on three of them.
+- **Repeating tasks were missing days on charts**: occurrences are only ever
+  materialized from today forward, so anything outside that short horizon had
+  no rows to draw and an every-3-days task lit three cells and stopped. The
+  chart window now follows a single rule — forward to `stats_horizon_days`
+  (the user's setting) and back no further than the days that really exist —
+  and occurrences are materialized across that whole window first. Empty weeks
+  are no longer padded in front of the map either.
+- **Charts invented no false history**: a rule is never planned before the
+  date written inside it. An every-N-days repeat is drawn back to its anchor
+  (its earlier planned days appear once the window covers them), while weekday
+  and monthly rules, which carry no date of their own, only ever show the days
+  they were actually running.

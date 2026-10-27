@@ -195,13 +195,15 @@ class BotApp:
             except Exception:
                 log.exception("menu follow-up failed for %s", user.id)
 
-    async def ensure_materialized(self, ctx: Ctx, extra_days: int = 0) -> None:
+    async def ensure_materialized(self, ctx: Ctx, ahead_days: int = 0,
+                                  back_days: int = 0) -> None:
         today = datetime.now(ctx.tz).date()
         # charts may look further ahead than the default reminder horizon
         horizon = max(self.cfg.occurrence_horizon_days,
-                      ctx.settings.stats_horizon_days, extra_days)
+                      ctx.settings.stats_horizon_days, ahead_days)
         for task in await self.store.list_tasks(ctx.user.id):
-            await self.store.materialize_occurrences(task, today, horizon, ctx.settings.tz)
+            await self.store.materialize_occurrences(
+                task, today, horizon, ctx.settings.tz, back_days)
 
     async def _on_text(self, ctx: Ctx, text: str) -> None:
         wizard = self.wizards.get(ctx.user.id)
@@ -428,13 +430,13 @@ class BotApp:
         # charts look stats_horizon_days into the future, so planned tasks are
         # visible; text/CSV reports keep describing what already happened
         chart = fmt in ("chart", "график", "hours")
-        # a chart looks as far ahead as it looks back (and never less than the
-        # user's own horizon): a repeating task is then drawn on every planned
-        # day of the period, not only on those inside the short reminder window
-        ahead = max(1, ctx.settings.stats_horizon_days, days or 365) if chart else 1
+        # forward: exactly the user's horizon setting; back: the period, but
+        # the map only ever reaches as far as real occurrences exist, and a
+        # schedule is never planned before the date written inside it
+        ahead = max(1, ctx.settings.stats_horizon_days) if chart else 1
         end = now + timedelta(days=ahead)
         if chart:
-            await self.ensure_materialized(ctx, ahead)
+            await self.ensure_materialized(ctx, ahead, days or 365)
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
         # planned (future) occurrences are kept on purpose: they show as
         # pending/«в плане» in reports and as blue insets on the heatmap
@@ -557,6 +559,10 @@ class BotApp:
                 tzinfo = ZoneInfo(ctx.settings.tz)
                 first = start.astimezone(tzinfo).date()
                 last = end.astimezone(tzinfo).date()
+                if grid:  # back only as far as the data goes, no empty run of
+                    oldest = min(d for d, _ in grid)  # days before the first task
+                    if oldest > first:
+                        first = oldest
                 if (last - first).days > 24:  # more rows than this stops being
                     first = last - timedelta(days=24)  # an hour-level picture
                 path = os.path.join(tmp, "hours.png")

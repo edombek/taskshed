@@ -78,6 +78,23 @@ class TestPlan:
         assert all(o.status == OccurrenceStatus.PENDING for o in occs)
         assert all(o.task_id == 7 for o in occs)
 
+    def test_backfill_stops_at_the_anchor(self):
+        # a chart window may reach back, but never past the date in the rule
+        t = task(data={"n": 3, "anchor": "2026-10-16"})
+        occs = plan_occurrences(t, date(2026, 10, 25), 5, MSK, back_days=30)
+        assert [o.due_at.date() for o in occs] == [
+            date(2026, 10, d) for d in (16, 19, 22, 25, 28)
+        ]
+
+    def test_backfill_invents_no_history_for_dateless_rules(self):
+        # weekdays/monthly rules carry no date of their own: they are never
+        # planned before the day they started running
+        t = task(ScheduleType.WEEKDAYS, data={"weekdays": [0, 2, 4]})
+        occs = plan_occurrences(t, date(2026, 10, 25), 5, MSK, back_days=60)
+        assert [o.due_at.date() for o in occs] == [
+            date(2026, 10, d) for d in (26, 28, 30)
+        ]
+
 
 class TestOverdue:
     def test_overdue(self):

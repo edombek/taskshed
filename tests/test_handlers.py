@@ -406,24 +406,6 @@ class TestStatsCommands:
         images = [m.image for m in f.sent if m.image]
         assert len(images) == 1 and images[0].endswith(".png")
 
-    async def test_period_chart_materializes_its_whole_window(self, env):
-        # a repeating task has to light every planned day of the period drawn:
-        # a month chart looks a month ahead, so those rows must exist there,
-        # not only inside the short reminder horizon
-        _, store, _ = env
-        await send(env, "Дом")
-        user = await store.get_user_by_account("telegram", PID)
-        home = await place_id_of(store, user.id, "Дом")
-        today = datetime.now(UTC).date()
-        await store.create_task(user.id, home, "Покупки", ScheduleType.EVERY_N_DAYS,
-                                {"n": 3, "anchor": today.isoformat()}, time(9, 0))
-        await send(env, "/статистика месяц график")
-        now = datetime.now(UTC)
-        occs = await store.occurrences_in_range(user.id, now,
-                                                now + timedelta(days=30))
-        assert len(occs) >= 10          # every 3rd day across the month
-
-
 class TestFanout:
     async def test_all_vs_primary(self, env):
         app, store, fake = env
@@ -1429,9 +1411,9 @@ class TestChartHorizonAndHours:
         await app.handle(RawEvent("telegram", PID, text="/статистика неделя график"))
         assert any(m.image for m in fake.sent)
 
-    async def test_period_chart_covers_its_own_period_ahead(self, env):
-        # a month chart looks a month ahead, so a repeat planned 20 days out
-        # belongs on the picture even with the default 7-day horizon
+    async def test_chart_forward_edge_is_the_horizon_setting(self, env):
+        # ahead, the picture reaches exactly stats_horizon_days: the setting
+        # decides whether a planned task is on it, not the length of a period
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
@@ -1440,20 +1422,56 @@ class TestChartHorizonAndHours:
         await store.create_task(user.id, pid, "Заказ", ScheduleType.ONCE, {},
                                 time(9, 0), deadline=when, start_at=when)
         await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
+        assert not any(m.image for m in fake.sent)  # 20 days out, horizon is 7
+        assert fake.find("срабатываний не было")
+        await store.update_settings(user.id, stats_horizon_days=30)
+        await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
         assert any(m.image for m in fake.sent)
 
-    async def test_horizon_setting_widens_a_short_period(self, env):
-        # the setting still matters: it reaches past the period itself
+    async def test_repeat_at_the_horizon_lights_every_planned_day(self, env):
+        # the whole horizon window is materialized before it is drawn, so a
+        # repeat shows on every one of its days inside it
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        today = datetime.now(UTC).date()
+        await store.create_task(user.id, home, "Покупки", ScheduleType.EVERY_N_DAYS,
+                                {"n": 3, "anchor": today.isoformat()}, time(9, 0))
+        await store.update_settings(user.id, stats_horizon_days=30)
+        await send(env, "/статистика месяц график")
+        now = datetime.now(UTC)
+        occs = await store.occurrences_in_range(user.id, now,
+                                                now + timedelta(days=30))
+        assert len(occs) >= 10          # every 3rd day across the window
+
+    async def test_repeat_is_drawn_back_to_its_own_anchor(self, env):
+        # a rule that carries a date in it exists from that date: the days it
+        # was already planned on belong on the chart
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
         pid = await place_id_of(store, user.id, "Дом")
-        when = datetime.now(UTC) + timedelta(days=20)
-        await store.create_task(user.id, pid, "Заказ", ScheduleType.ONCE, {},
-                                time(9, 0), deadline=when, start_at=when)
-        await app.handle(RawEvent("telegram", PID, text="/статистика неделя график"))
-        assert not any(m.image for m in fake.sent)   # a week reaches 7 days out
-        assert fake.find("срабатываний не было")
-        await store.update_settings(user.id, stats_horizon_days=30)
-        await app.handle(RawEvent("telegram", PID, text="/статистика неделя график"))
-        assert any(m.image for m in fake.sent)
+        today = datetime.now(UTC).date()
+        await store.create_task(user.id, pid, "Поверка", ScheduleType.EVERY_N_DAYS,
+                                {"n": 7, "anchor": (today - timedelta(days=21)).isoformat()},
+                                time(9, 0))
+        await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC) - timedelta(days=30), datetime.now(UTC))
+        assert len({occ.due_at.date() for occ, _ in occs
+                    if occ.due_at < datetime.now(UTC)}) >= 3
+
+    async def test_weekday_rule_gets_no_history_before_it_existed(self, env):
+        # a rule with no date of its own cannot be backfilled: a year chart
+        # must not invent planned days from before the task was created
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        await store.create_task(user.id, pid, "Совещание", ScheduleType.WEEKDAYS,
+                                {"weekdays": [0, 2, 4]}, time(9, 0))
+        await app.handle(RawEvent("telegram", PID, text="/статистика год график"))
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC) - timedelta(days=365), datetime.now(UTC))
+        assert not [occ for occ, _ in occs if occ.due_at < datetime.now(UTC)]

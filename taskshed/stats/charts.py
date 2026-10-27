@@ -198,8 +198,9 @@ def trend_line(points: list[tuple[date, int, int]], lang: str, out_path: str) ->
 
 def _heatmap_window(days: dict[date, dict], end: date | None,
                     min_weeks: int, max_weeks: int) -> tuple[date, int]:
-    """(first Monday, week count) — always at least `min_weeks` weeks back
-    from the newest day (or today), so sparse periods still show a month."""
+    """(first Monday, week count) — the window starts at the week holding the
+    oldest day there is data for and ends at the week holding `end` (the
+    horizon), so the days ahead are drawn even while empty."""
     from datetime import timedelta
 
     lo, hi = min(days), max(days)
@@ -219,7 +220,7 @@ def _heatmap_window(days: dict[date, dict], end: date | None,
 
 
 def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
-                   max_weeks: int = 53, min_weeks: int = 5,
+                   max_weeks: int = 53, min_weeks: int = 1,
                    end: date | None = None, today: date | None = None) -> str:
     """GitHub-contribution-style grid: week columns, Mon-Sun rows.
 

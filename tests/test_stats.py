@@ -93,17 +93,17 @@ class TestCharts:
         out3 = str(tmp_path / "h2.png")
         assert charts.github_heatmap(far, "en", out3) == out3
 
-    def test_heatmap_window_at_least_one_month(self):
-        # single recent day → still 5 week columns back from the anchor
+    def test_heatmap_window_starts_at_the_oldest_day(self):
+        # going back only as far as real data reaches: one day → one week column
         d0 = date(2026, 10, 26)
         first, n = charts._heatmap_window({d0: {"done": 1}}, end=d0,
-                                          min_weeks=5, max_weeks=53)
-        assert n == 5
-        assert first <= d0 - timedelta(days=28)
+                                          min_weeks=1, max_weeks=53)
+        assert n == 1
+        assert first == d0 - timedelta(days=d0.weekday())
         assert first.weekday() == 0  # window starts on Monday
         # sparse period a year long → clamped to 53 weeks
         sparse = {date(2025, 11, 1): {"done": 1}, d0: {"done": 2}}
-        first, n = charts._heatmap_window(sparse, end=d0, min_weeks=5, max_weeks=53)
+        first, n = charts._heatmap_window(sparse, end=d0, min_weeks=1, max_weeks=53)
         assert n == 53
         # empty window helper must not be used for empty data
         assert charts.github_heatmap({}, "ru", "/tmp/none.png") == ""
@@ -114,7 +114,7 @@ class TestCharts:
         days = {d0 - timedelta(days=3): {"done": 1},
                 d0 + timedelta(days=6): {"pending": 1}}
         first, n = charts._heatmap_window(days, end=date(2026, 11, 5),
-                                          min_weeks=5, max_weeks=53)
+                                          min_weeks=1, max_weeks=53)
         last_monday = first + timedelta(weeks=n - 1)
         assert last_monday >= d0  # the week holding the planned day is drawn
 
@@ -124,7 +124,7 @@ class TestCharts:
         d0 = date(2026, 10, 26)
         days = {d0 - timedelta(days=2): {"done": 1}}
         first, n = charts._heatmap_window(days, end=d0 + timedelta(days=7),
-                                          min_weeks=5, max_weeks=53)
+                                          min_weeks=1, max_weeks=53)
         last_monday = first + timedelta(weeks=n - 1)
         assert last_monday + timedelta(days=6) >= d0 + timedelta(days=7)
 

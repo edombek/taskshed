@@ -38,9 +38,9 @@ platform-independent core.
   that question is modal: a dialog you were in the middle of (task wizard,
   report) waits behind it and is replayed afterwards — or you tap ⏭ Not now.
 - **Statistics**: text summary, CSV/XLSX export, PNG charts — a GitHub-style
-  activity heatmap (missed / planned / skipped markers, always drawn up to the
-  horizon ahead — default one week, and never shorter than the period being
-  drawn) plus an **hour-level map for short periods**
+  activity heatmap (missed / planned / skipped markers, drawn forward to the
+  horizon from your settings — a week by default — and back only as far as real
+  tasks go) plus an **hour-level map for short periods**
   that marks missed and still-planned work too, top tasks/places, completion
   trend — for any period or the whole history.
 - **Multi-account**: link your Telegram and VK identities with a one-time

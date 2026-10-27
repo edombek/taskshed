@@ -135,8 +135,8 @@ Checklist of the implementation roadmap. EN summary in
       (✅/✖) whenever it guessed; «▶ Сейчас» button on the start step
 - [x] «Без срока» on the ready-by step: a one-off task can be a bare moment
       (reminder only), drawn as one hour on the hour map, not a band
-- [x] Chart window = max(user horizon, period length) ahead, with occurrences
-      materialized across the whole window (repeats draw on every planned day)
+- [x] Chart window: forward = `stats_horizon_days`, back = only real days (no
+      padded weeks); materialize the window, never plan before a rule's own date
 - [x] Modal «Где вы сейчас?»: an open wizard/list intent is parked, the place
       answer (button or typed name) resumes it; «⏭ Не сейчас» skips the question
 
