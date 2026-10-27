@@ -254,11 +254,14 @@ sequenceDiagram
     end
     U->>Msg: "done:42" button (any linked chat)
     Msg->>Core: ownership check → status=done + completions row
+    Core->>Msg: redraw the very digest message: handled row keeps its line<br/>with a ✅ mark but loses the buttons, the rest stay tappable
+    Msg->>U: no new message and no menu: one digest can close many tasks
     U->>Msg: "wip:42" → status=in_progress: «▶ в работе»,<br/>row keeps its deadline but is never marked missed
     U->>Msg: "snooze:42" → duration buttons [15м][1ч][4ч][+сутки]
     U->>Msg: "snz:42:60" → reminder_at = now + 60 min
-    U->>Msg: "skip:42" → status=skipped: hidden today,<br/>never flipped to missed, no penalty in stats
-    Msg->>U: after any completed command:<br/>"Хотите сделать что-нибудь ещё?" + command menu
+    U->>Msg: "skip:42" → status=skipped: «⏭пропущено»,<br/>never flipped to missed, no penalty in stats
+    U->>Msg: "tl:close" ✔️ Готово — or the last row got handled:<br/>the message disarms its own buttons
+    Msg->>U: after any completed command outside a list:<br/>"Хотите сделать что-нибудь ещё?" + command menu
 ```
 <!-- mermaid:end reminder-flow -->
 

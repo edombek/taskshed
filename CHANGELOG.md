@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Task lists and reminder digests update in place**: a tap on ✅/▶/⏭
+  redraws that very message — the handled row keeps its line with a mark but
+  loses its buttons, the rest stay tappable, and a «✔️ Готово» row closes the
+  list. No more new message + main menu after every tap: several tasks due on
+  one tick can be worked through inside a single digest (when the last row is
+  handled the message disarms itself; unknown/forwarded copies fall back to
+  the old reply+menu behavior).
+
 ### Removed
 - **The `.env` convention**: nothing ever loaded it (`load_dotenv` was never
   called), so `.env.example` and the `python-dotenv` dependency are gone.
@@ -12,6 +21,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   variables of the process (env wins).
 
 ### Fixed
+- **Stale copies of the fanned-out «Где вы сейчас?»**: the question is sent
+  to every linked chat, but answering it in one chat made the others' ⏭
+  «Не сейчас» answer with silence; now any copy hands the user back the main
+  menu instead of a dead end.
 - **Raw i18n keys could reach the chat**: an unparseable date/time answer
   replied with the literal `bad` (a non-catalog key, the hint was swallowed
   too). Now it answers «Не понял» + repeats the question as the hint. `t()`

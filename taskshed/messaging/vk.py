@@ -65,8 +65,10 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
     callback = action.get("payload") if action.get("type") == "callback" else None
     if not text and not callback:
         return None
+    mid = obj.get("last_message_id") or msg.get("id")
     return RawEvent(platform="vk", platform_user_id=str(peer),
-                    text=text or None, callback=callback or None)
+                    text=text or None, callback=callback or None,
+                    message_id=str(mid) if mid else None)
 
 
 class VkAdapter:
@@ -77,6 +79,7 @@ class VkAdapter:
         self.app = app
         self._session: aiohttp.ClientSession | None = None
         self._token = cfg.group_token
+        self._lp_method = ""  # long poll endpoint that worked last time
 
     async def _http(self) -> aiohttp.ClientSession:
         if self._session is None:
@@ -97,30 +100,53 @@ class VkAdapter:
     # ---------- long poll loop ----------
 
     async def run_forever(self) -> None:
-        server, key, ts = await self._server()
-        log.info("vk bot long poll started (group %s, proxy=%s)",
-                 self.cfg.group_id, self.cfg.proxy.type or "none")
+        # never let a VK hiccup take the whole process down: log, wait, retry
         while True:
             try:
-                session = await self._http()
-                async with session.get(server, params={
-                        "act": "a_check", "key": key, "ts": ts, "wait": 25}) as resp:
-                    payload = await resp.json()
-                if "failed" in payload:
-                    server, key, ts = await self._server()
-                    continue
-                ts = payload.get("ts", ts)
-                for upd in payload.get("updates", []):
-                    ev = parse_longpoll_update(upd)
-                    if ev:
-                        await self.app.handle(ev)
-            except (TimeoutError, aiohttp.ClientError):
-                await asyncio.sleep(3)
                 server, key, ts = await self._server()
+                log.info("vk bot long poll started (proxy=%s)",
+                         self.cfg.proxy.type or "none")
+                while True:
+                    try:
+                        session = await self._http()
+                        async with session.get(server, params={
+                                "act": "a_check", "key": key, "ts": ts,
+                                "wait": 25}) as resp:
+                            payload = await resp.json()
+                        if "failed" in payload:
+                            server, key, ts = await self._server()
+                            continue
+                        ts = payload.get("ts", ts)
+                        for upd in payload.get("updates", []):
+                            ev = parse_longpoll_update(upd)
+                            if ev:
+                                await self.app.handle(ev)
+                    except (TimeoutError, aiohttp.ClientError):
+                        await asyncio.sleep(3)
+                        server, key, ts = await self._server()
+            except Exception as exc:
+                log.error("vk long poll unavailable: %s (retry in 30s)", exc)
+                await asyncio.sleep(30)
 
     async def _server(self):
-        d = await self._api("groups.getLongPollServer", group_id=self.cfg.group_id)
-        return d["server"], d["key"], d["ts"]
+        # The community BLP endpoint wants group_id in config; when it is
+        # missing (0) or the token scopes reject it, the very same server is
+        # reachable via messages.getLongPollServer under a group token.
+        # Remember which one worked so key refreshes stop probing both.
+        order: list[tuple[str, dict]] = []
+        if self.cfg.group_id and self._lp_method != "messages":
+            order.append(("groups.getLongPollServer",
+                          {"group_id": self.cfg.group_id}))
+        order.append(("messages.getLongPollServer", {}))
+        for name, params in order:
+            d = await self._api(name, **params)
+            if "server" in d:
+                self._lp_method = name.split(".")[0]
+                server = d["server"]
+                if not server.startswith(("http://", "https://")):
+                    server = "https://" + server  # VK hands back a bare host/path
+                return server, d["key"], d["ts"]
+        raise RuntimeError("no vk long poll server: check group_token/group_id")
 
     # ---------- IMessenger ----------
 

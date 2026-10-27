@@ -23,12 +23,12 @@ async def env():
     await store._engine.dispose()
 
 
-async def send(env, text=None, cb=None, pid=PID, platform="telegram"):
+async def send(env, text=None, cb=None, msg=None, pid=PID, platform="telegram"):
     app, store, fake = env
     messenger = app.messengers[platform]
     fake.clear()
     app.messengers["vk"].clear()
-    await app.handle(RawEvent(platform, pid, text=text, callback=cb))
+    await app.handle(RawEvent(platform, pid, text=text, callback=cb, message_id=msg))
     return messenger
 
 

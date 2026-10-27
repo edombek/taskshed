@@ -34,10 +34,57 @@ class TestParseUpdate:
         }})
         assert ev and ev.callback == "done:3" and ev.text is None
 
+    def test_message_carries_the_button_message_id(self, env=None):
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": {"from_id": 7, "text": ""},
+            "last_message_id": 111,
+            "client_info": {"button_action": {"type": "callback", "payload": "done:3"}},
+        }})
+        assert ev and ev.message_id == "111"
+
     def test_ignores_other_updates(self):
         assert parse_longpoll_update({"type": "message_allow"}) is None
         assert parse_longpoll_update({"type": "message_new",
                                       "object": {"message": {"from_id": 1, "text": ""}}}) is None
+
+
+class TestLongPollServer:
+    """A bad group_id must not kill the loop: fallback + loud failure."""
+
+    def _adapter(self, group_id: int, api_calls: list):
+        async def fake_api(method, **params):
+            api_calls.append(method)
+            if method == "groups.getLongPollServer":
+                return {}                      # vk replied an error → {}
+            return {"server": "api.gim/1", "key": "k", "ts": 1}
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+        ad = VkAdapter(VkCfg(group_token="t", group_id=group_id), app=None)
+        ad._api = fake_api
+        return ad
+
+    async def test_falls_back_to_messages_endpoint(self):
+        calls: list = []
+        ad = self._adapter(0, calls)
+        assert await ad._server() == ("https://api.gim/1", "k", 1)
+        assert calls == ["messages.getLongPollServer"]  # group_id=0: skipped
+
+    async def test_falls_back_when_groups_endpoint_denies(self):
+        calls: list = []
+        ad = self._adapter(-123, calls)
+        assert await ad._server() == ("https://api.gim/1", "k", 1)
+        assert calls == ["groups.getLongPollServer", "messages.getLongPollServer"]
+
+    async def test_clear_error_when_both_endpoints_fail(self):
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+        ad = VkAdapter(VkCfg(group_token="t", group_id=0), app=None)
+        async def dead(method, **params):
+            return {}
+        ad._api = dead
+        import pytest
+        with pytest.raises(RuntimeError, match="check group_token/group_id"):
+            await ad._server()
 
 
 def test_adapters_importable():

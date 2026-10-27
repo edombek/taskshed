@@ -16,6 +16,7 @@ class RawEvent:
     platform_user_id: str
     text: str | None = None          # cleaned command/message text
     callback: str | None = None      # button payload, e.g. "done:123"
+    message_id: str | None = None    # message the button was pressed on
 
 
 # Outbound button row: list of rows; each row: list of (label, callback_data)

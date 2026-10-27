@@ -25,6 +25,10 @@ class BotBase:
         # live keyboards per (user, account): {message_id: text}. A newer
         # answer strips these, so stale buttons cannot be tapped twice
         self._kb_msgs: dict[tuple[int, int], dict[str, str]] = {}
+        # live task-list/digest messages per (user, account): {message_id:
+        # (place_name, [occurrence ids])}. Taps on them re-render that very
+        # message, so one reminder can be worked through without chat spam
+        self._tl_msgs: dict[tuple[int, int], dict[str, tuple[str, list[int]]]] = {}
         # last tab of the task editor per user: where ⬅️ Назад goes back to
         self._edit_tab: dict[int, str] = {}
         # a "where are you?" that interrupted something else: the interrupted
@@ -37,6 +41,13 @@ class BotBase:
         if mid:
             self._kb_msgs.setdefault((user_id, account.id), {})[mid] = text
 
+    def _track_tl(self, user_id: int, account: Account, mid: str | None,
+                  place_name: str, occ_ids: list[int]) -> None:
+        """Remember which occurrences a task-list message shows."""
+        if mid:
+            self._tl_msgs.setdefault((user_id, account.id), {})[mid] = (
+                place_name, occ_ids)
+
     async def _strip_keyboards(self, messenger: IMessenger, account: Account,
                                user_id: int, keep: str = "") -> None:
         """Disarm every keyboard that is no longer the newest screen.
@@ -45,6 +56,7 @@ class BotBase:
         armed (the edit that follows replaces its buttons anyway).
         """
         live = self._kb_msgs.pop((user_id, account.id), {})
+        live_tl = self._tl_msgs.pop((user_id, account.id), {})
         for mid, text in live.items():
             if mid == keep:
                 continue
@@ -54,3 +66,5 @@ class BotBase:
                 log.debug("keyboard strip failed for message %s", mid)
         if keep and keep in live:
             self._kb_msgs[(user_id, account.id)] = {keep: live[keep]}
+            if keep in live_tl:
+                self._tl_msgs[(user_id, account.id)] = {keep: live_tl[keep]}

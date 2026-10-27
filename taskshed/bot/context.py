@@ -26,15 +26,17 @@ class Ctx:
         self.replied = False       # handler answered something
         self.suppress_menu = False # answer already has interactive buttons (menu would clutter)
 
-    async def reply(self, text: str, buttons: ButtonRows | None = None) -> None:
+    async def reply(self, text: str, buttons: ButtonRows | None = None) -> str | None:
+        """Send an answer; returns its message id when it carries buttons."""
         # every previous keyboard in this chat becomes stale right here
         await self.app._strip_keyboards(self.messenger, self.account, self.user.id)
         self.replied = True
         if buttons:
             mid = await self.messenger.send_buttons(self.account, text, buttons)
             self.app._track_kb(self.user.id, self.account, mid, text)
-        else:
-            await self.messenger.send_text(self.account, text)
+            return mid
+        await self.messenger.send_text(self.account, text)
+        return None
 
     async def place_buttons(self, question_key: str,
                             extra_rows: ButtonRows | None = None) -> None:

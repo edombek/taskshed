@@ -206,6 +206,8 @@ class BotApp(
             await self._cb_place(ctx, int(arg))
         elif action == "loc" and arg == "later":
             await self._location_later(ctx)
+        elif action == "tl" and arg == "close":
+            await self._cb_tl_close(ctx)
         elif action == "sched":
             await self._cb_sched(ctx, arg)
         elif action == "wd":

@@ -54,6 +54,16 @@ class TestOnboarding:
         assert {"cmd:where", "cmd:tasks"} <= {cb for row in f.last_buttons()
                                               for _, cb in row}
 
+    async def test_stale_not_now_copy_still_returns_the_menu(self, env):
+        # a fanned-out question lives in several chats; after one chat answered,
+        # the other chat's ⏭ must still land somewhere, not into silence
+        await send(env, "Дом")
+        await send(env, "/гдея")
+        f = await send(env, cb="loc:later")
+        assert "ещё" in f.texts()[0]
+        f = await send(env, cb="loc:later")  # the copy in the other chat
+        assert "ещё" in f.texts()[0]
+
     async def test_tap_of_a_deleted_place_button_says_so(self, env):
         _, store, _ = env
         await send(env, "Дом")

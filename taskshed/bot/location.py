@@ -62,12 +62,11 @@ class LocationMixin:
     async def _location_later(self, ctx: Ctx) -> None:
         """⏭ «Позже»: back to what was being typed, still without a place."""
         parked = self._await_loc.pop(ctx.user.id, None)
-        if parked is None:
-            return  # stale button: the question was resolved elsewhere
         ctx.suppress_menu = True
         if not parked:
-            # a bare /гдея had nothing to resume: hand back the main menu,
-            # otherwise the tap leaves the user with no buttons at all
+            # nothing to resume: either a bare /гдея, or a stale copy of a
+            # fanned-out question already answered in another chat — either
+            # way hand back the main menu, never silence
             await ctx.reply(t("menu_ask_more", ctx.lang),
                             self._menu_rows(ctx.lang))
             return

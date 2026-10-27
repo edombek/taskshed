@@ -61,12 +61,21 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Telegram smoke: bot connects through the proxy — 2026-10-27 via local
       `tg-ws-proxy` on 127.0.0.1:8586 (mtproxy transport; the old 8888 daemon
       accepted handshakes but never forwarded). `start(bot_token=…)`, Telethon 1.45
-- [ ] Telegram chat flow: places → tasks → digest → ✅ → stats (interactive)
-      — in progress: bot is online, walking the flow in chat now
-- [ ] VK: real community token + `group_id` (placeholders removed), enable
-      (`getLongPollServer` probe answers error 15 with `group_id=0`)
-- [ ] VK smoke: long poll connects, `/старт` replies
+- [x] Telegram chat flow: places → tasks → digest → ✅ → stats (interactive)
+      — walked live 2026-10-27: wizard task, `/задачи`, digest from the
+      scheduler with ✅ tap (`done:2` at 15:22), stats week/month with CSV and
+      chart uploads in the log
+- [x] VK: real community token + `group_id` (242594545). The token scopes
+      refuse `groups.getLongPollServer` (error 15/1133) — the adapter now
+      falls back to `messages.getLongPollServer` (returns the same `gim…`
+      server), normalizes the bare host to https, and retries instead of
+      crashing the process
+- [ ] VK smoke: long poll connects, `/старт` replies — connects, awaiting the
+      interactive walk (⏭ «Не сейчас» stale-copy dead end fixed on the way)
 - [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
+      — VK account is not linked yet: it is not registered in `accounts`,
+      so digests do not fan out to VK; start it by writing anything to the
+      VK bot, then `/привязать` <code> in Telegram
 
 ## Stage 8 — UX polish (from live-testing feedback) ✅
 - [x] Inline command menu buttons under `/start` and `/help`

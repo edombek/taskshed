@@ -66,6 +66,7 @@ class TelegramAdapter:
             platform=self.platform,
             platform_user_id=str(ev.chat_id),
             text=ev.raw_text,
+            message_id=str(ev.message_id),
         ))
 
     async def _on_callback(self, ev) -> None:
@@ -82,6 +83,7 @@ class TelegramAdapter:
                 platform=self.platform,
                 platform_user_id=str(ev.chat_id),
                 callback=data,
+                message_id=str(ev.message_id),
             ))
 
     # ---------- IMessenger ----------
