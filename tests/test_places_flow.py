@@ -53,8 +53,12 @@ class TestPlacesScreen:
         await _tap(env, text="/места")
         await _tap(env, text="Дом")
         scr = fake.sent[-1]
-        assert not await _tap(env, cb="pl:close", msg=scr.id)
+        msgs = await _tap(env, cb="pl:close", msg=scr.id)
         assert scr.buttons == []
+        # Готово is the end of the walk: the main menu comes back
+        assert any(m.buttons and any(cb.startswith("cmd:")
+                                     for row in m.buttons for _, cb in row)
+                   for m in msgs)
         assert not app._pl_msgs and ctx_gone(app)
         before = len(fake.sent)
         await _tap(env, text="Работа")  # the add-by-text mode exited too

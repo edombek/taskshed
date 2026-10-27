@@ -90,24 +90,19 @@ class PlacesMixin:
         return await self._edit_places_msg(ctx, note + "\n\n" + text, rows) is not None
 
     async def _cb_places_close(self, ctx: Ctx) -> None:
-        """✔️ Готово: leave the screen — the keyboard goes away, menu back."""
+        """✔️ Готово: leave the screen — keyboard off, main menu back."""
         mid = self._pl_msgs.pop((ctx.user.id, ctx.account.id), None)
         self.wizards.pop(ctx.user.id, None)
-        if not mid:
-            # an old copy of the screen (restart, stripped bookkeeping):
-            # the button must still lead somewhere, never silence
-            ctx.suppress_menu = True
-            await ctx.reply(t("menu_ask_more", ctx.lang),
-                            self._menu_rows(ctx.lang))
-            return
-        live = self._kb_msgs.get((ctx.user.id, ctx.account.id), {})
-        try:
-            await ctx.messenger.edit_buttons(ctx.account, mid, live.get(mid, ""), [])
-        except Exception:
-            pass
-        live.pop(mid, None)
-        ctx.replied = True
+        if mid:
+            live = self._kb_msgs.get((ctx.user.id, ctx.account.id), {})
+            try:
+                await ctx.messenger.edit_buttons(ctx.account, mid, live.get(mid, ""), [])
+            except Exception:
+                pass
+            live.pop(mid, None)
+        # the last level of the walk: Готово hands the main menu back
         ctx.suppress_menu = True
+        await ctx.reply(t("menu_ask_more", ctx.lang), self._menu_rows(ctx.lang))
 
     async def _find_place_by_name(self, user_id: int, name: str):
         """Existing place with this name, comparing without regard to case."""

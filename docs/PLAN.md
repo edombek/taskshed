@@ -205,8 +205,8 @@ Checklist of the implementation roadmap. EN summary in
       menu): stats period/format screens, hour-map navigator, editor picker,
       settings, language menu; ⬅️ Назад now stays inside a dialog only.
 - [x] The notice footer with «Готово» is sent even when the current place has
-      nothing tappable (brief-others-only notice still closes); a stale
-      ✔️ Готово on the places screen returns the menu instead of silence.
+      nothing tappable (brief-others-only notice still closes); the places
+      screen ✔️ Готово disarms the screen and brings the main menu back.
 - [x] The hour map pages whole weeks in both directions without a limit: each
       button carries the shift of the week it draws, labels name its dates,
       and the plan for far weeks is materialized on demand.
