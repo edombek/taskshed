@@ -67,8 +67,8 @@ python -m taskshed.entrypoints.run_vk         # VK only
 python -m taskshed.entrypoints.run_all        # both platforms at once
 ```
 
-Environment variables can be used instead of `config.yaml` — see
-[`.env.example`](.env.example).
+Environment variables (all prefixed `TASKSHED_`, e.g. `TASKSHED_TELEGRAM_BOT_TOKEN`)
+override the matching `config.yaml` keys.
 
 ### Telegram MTProto proxy
 

@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+- **The `.env` convention**: nothing ever loaded it (`load_dotenv` was never
+  called), so `.env.example` and the `python-dotenv` dependency are gone.
+  Two config sources remain: `config.yaml` and `TASKSHED_*` environment
+  variables of the process (env wins).
+
 ### Fixed
 - **The «Где вы сейчас?» question honors its own invitation**: with no places
   saved it said «add one by text», but typing a name only re-asked forever;

@@ -1,8 +1,8 @@
 # Configuration (English)
 
 Two sources, merged in order (env wins): `config.yaml` (see
-`config.example.yaml`), then `TASKSHED_*` environment variables / `.env`.
-`config.yaml` and `.env` are gitignored — never commit secrets.
+`config.example.yaml`), then `TASKSHED_*` environment variables of the
+process. `config.yaml` is gitignored — never commit secrets.
 
 ## Database
 

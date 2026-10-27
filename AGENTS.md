@@ -23,7 +23,7 @@ python scripts/smoke_chat.py       # offline end-to-end chat walk (no network)
   what `requires-python = ">=3.12"` allows.
 - Running the bot for real: `alembic upgrade head`, then
   `python -m taskshed.entrypoints.run_telegram|run_vk|run_all`
-  (config from `config.yaml` / `.env`).
+  (config from `config.yaml`; `TASKSHED_*` env vars of the process override it).
 
 ## Architecture map (don't fight it)
 
@@ -101,9 +101,10 @@ the user's current location ("home", "work"). Python 3.12+ (`python3`), asyncio.
   `tests/chatenv.py` (re-exported via `conftest.py`).
   CI (`.github/workflows/ci.yml`): ruff + pytest; never let adapters be
   required for core unit tests.
-- Secrets: `.env`/`config.yaml` are gitignored; commit only `.env.example` /
-  `config.example.yaml` (per-platform proxy blocks: mtproxy for Telegram,
-  http/socks5 for VK).
+- Secrets: `config.yaml` is gitignored; commit only `config.example.yaml`
+  (per-platform proxy blocks: mtproxy for Telegram, http/socks5 for VK).
+  There is no `.env` convention — `TASKSHED_*` overrides come from the real
+  process environment. The `.env` entry stays in `.gitignore` as a safety net.
 
 ## Gotchas
 
