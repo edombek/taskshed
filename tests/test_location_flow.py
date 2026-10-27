@@ -31,6 +31,9 @@ class TestOnboarding:
         user = await store.get_user_by_account("telegram", PID)
         loc = await store.get_location(user.id)
         assert loc and loc[0].name == "Дом"
+        # the answer ends with the menu follow-up: buttons must stay reachable
+        flat = {cb for m in f.sent for row in (m.buttons or []) for _, cb in row}
+        assert "cmd:task" in flat
 
     async def test_unknown_name_at_question_re_asks_without_menu(self, env):
         await send(env, "Дом")
@@ -41,6 +44,24 @@ class TestOnboarding:
         _, store, _ = env
         user = await store.get_user_by_account("telegram", PID)
         assert len(await store.list_places(user.id)) == 1  # «Луна» not created
+
+    async def test_not_now_from_a_plain_where_offers_the_menu(self, env):
+        # ⏭ with nothing parked behind the question must not leave a
+        # buttonless dead end
+        await send(env, "Дом")
+        await send(env, "/гдея")
+        f = await send(env, cb="loc:later")
+        assert {"cmd:where", "cmd:tasks"} <= {cb for row in f.last_buttons()
+                                              for _, cb in row}
+
+    async def test_tap_of_a_deleted_place_button_says_so(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await store.delete_place(user.id, home)
+        f = await send(env, cb=f"place:{home}")
+        assert any("удалено" in m for m in f.texts())
 
     async def test_add_second_place_via_places_command(self, env):
         await send(env, "Дом")

@@ -118,7 +118,6 @@ class BotApp(
             if place:
                 await self._location_chosen(ctx, place)
                 return
-            ctx.suppress_menu = True  # the question is the screen, no menu on top
             if not await self.store.list_places(ctx.user.id):
                 # with no places at all the question literally invites:
                 # "add one by text" — honor it instead of looping
@@ -126,6 +125,7 @@ class BotApp(
                 if fresh:
                     await self._location_chosen(ctx, fresh)
                     return
+            ctx.suppress_menu = True  # only the re-ask owns its own buttons
             await ctx.place_buttons(
                 "where_question",
                 [[(t("btn_loc_later", ctx.lang), "loc:later")]]
@@ -190,6 +190,7 @@ class BotApp(
     async def _cmd_unlink(self, ctx: Ctx, _: str) -> None:
         accounts = await self.store.get_accounts(ctx.user.id)
         if len(accounts) < 2:
+            await ctx.reply(t("unlink_none", ctx.lang))
             return
         await self.store.detach_account(ctx.account.id, ctx.user.id)
         await ctx.reply(t("unlink_done", ctx.lang))

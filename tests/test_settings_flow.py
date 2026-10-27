@@ -110,6 +110,16 @@ class TestRemindersWhenFlow:
         assert len(statuses) == 1
         assert "каждые 90 мин" in statuses[0].text
 
+    async def test_bad_value_re_asks_the_same_prompt_in_place(self, env):
+        app, store, fake = await self._open(env)
+        await self._cb(app, "rem:interval")
+        fake.clear()
+        await app.handle(RawEvent("telegram", PID, text="не-число"))
+        assert "Каждые сколько минут" in fake.texts()[-1]  # prompt is back
+        assert app._pending_inputs.get(1) == "reminput:interval"  # still armed
+        await app.handle(RawEvent("telegram", PID, text="90"))    # fixed in place
+        assert (await store.get_settings(1)).remind_interval_min == 90
+
 
 class TestSettingsScreen:
     """One «⚙️ Настройки» screen for everything a user can configure."""

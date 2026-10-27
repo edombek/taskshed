@@ -147,6 +147,14 @@ class SettingsMixin:
         await ctx.reply(t("unlink_done", ctx.lang))
         await self._settings_status(ctx)
 
+    async def _reminput_bad(self, ctx: Ctx, field: str) -> None:
+        """A rejected value keeps the dialog open: fix it right here."""
+        self._pending_inputs[ctx.user.id] = f"reminput:{field}"
+        ctx.suppress_menu = True
+        await ctx.reply(t("wizard_bad_input", ctx.lang,
+                          hint=t(f"rem_ask_{field}", ctx.lang)),
+                        [[(t("btn_back", ctx.lang), "rem:back")]])
+
     async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
         values: dict = {}
         if field == "times":
@@ -156,41 +164,35 @@ class SettingsMixin:
                 values = {"remind_mode": "times",
                           "remind_times": [p.strftime("%H:%M") for p in parsed]}
             else:
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("rem_ask_times", ctx.lang)))
+                await self._reminput_bad(ctx, "times")
                 return
         elif field == "interval":
             if not text.isdigit() or int(text) < 5:
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("rem_ask_interval", ctx.lang)))
+                await self._reminput_bad(ctx, "interval")
                 return
             values = {"remind_mode": "interval", "remind_interval_min": int(text)}
         elif field == "quiet":
             parts = text.split()
             parsed = [read_clock(p) for p in parts]
             if len(parts) != 2 or any(p is None for p in parsed):
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("rem_ask_quiet", ctx.lang)))
+                await self._reminput_bad(ctx, "quiet")
                 return
             values = {"quiet_start": parsed[0], "quiet_end": parsed[1]}
         elif field == "ttl":
             if not text.isdigit() or not 1 <= int(text) <= 168:
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("rem_ask_ttl", ctx.lang)))
+                await self._reminput_bad(ctx, "ttl")
                 return
             values = {"location_ttl_hours": int(text)}
         elif field == "tz":
             try:
                 ZoneInfo(text.strip())
             except (KeyError, ValueError):
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("rem_ask_tz", ctx.lang)))
+                await self._reminput_bad(ctx, "tz")
                 return
             values = {"tz": text.strip()}
         elif field == "horizon":
             if not text.isdigit() or not 1 <= int(text) <= 90:
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("rem_ask_horizon", ctx.lang)))
+                await self._reminput_bad(ctx, "horizon")
                 return
             values = {"stats_horizon_days": int(text)}
         st = await self.store.update_settings(ctx.user.id, **values)

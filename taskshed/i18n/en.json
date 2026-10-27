@@ -70,6 +70,7 @@
   "link_bad_code": "Code not found or expired. Request a new one (/link).",
   "link_need_code": "Enter the code from the other platform: /link CODE",
   "unlink_done": "Account detached.",
+  "unlink_none": "You only have one account connected — nothing to unlink.",
   "lang_menu": "Choose language:",
   "menu_where": "📍 Where am I",
   "menu_tasks": "📋 Tasks",

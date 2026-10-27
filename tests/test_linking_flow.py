@@ -42,3 +42,11 @@ class TestLinking:
         same = await store.get_user_by_account("vk", "777")
         assert same.id == user.id
         assert len(await store.get_accounts(user.id)) == 2
+
+
+class TestUnlinkAlone:
+    async def test_single_account_unlink_explains(self, env):
+        # /отвязать when there is nothing to unlink must still answer
+        await send(env, "Дом")
+        f = await send(env, "/отвязать")
+        assert "отвязывать нечего" in f.texts()[0]

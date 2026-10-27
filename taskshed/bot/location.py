@@ -62,9 +62,15 @@ class LocationMixin:
     async def _location_later(self, ctx: Ctx) -> None:
         """⏭ «Позже»: back to what was being typed, still without a place."""
         parked = self._await_loc.pop(ctx.user.id, None)
-        if not parked:
-            return
+        if parked is None:
+            return  # stale button: the question was resolved elsewhere
         ctx.suppress_menu = True
+        if not parked:
+            # a bare /гдея had nothing to resume: hand back the main menu,
+            # otherwise the tap leaves the user with no buttons at all
+            await ctx.reply(t("menu_ask_more", ctx.lang),
+                            self._menu_rows(ctx.lang))
+            return
         await self._replay(ctx, parked)
 
     async def _cmd_where(self, ctx: Ctx, _: str) -> None:
@@ -74,6 +80,8 @@ class LocationMixin:
     async def _cb_place(self, ctx: Ctx, place_id: int) -> None:
         place = await self.store.get_place(ctx.user.id, place_id)
         if place is None:
+            # the place was deleted while this keyboard was alive
+            await ctx.reply(t("place_removed", ctx.lang))
             return
         if ctx.user.id in self._await_loc:
             # this tap answers the parked place question, not the dialog that
