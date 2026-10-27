@@ -68,12 +68,12 @@ class TestBackOnEveryPrompt:
         user = await store.get_user_by_account("telegram", PID)
         assert (await store.get_settings(user.id)).location_ttl_hours == 6
 
-    async def test_places_without_any_still_offers_back(self, env):
+    async def test_places_without_any_still_offers_close(self, env):
         app, store, fake = env
         await send(env, "/start")  # no places yet
         f = await send(env, "/места")
         flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert flat == ["menu:back"]
+        assert flat == ["pl:close"]  # type a name to add, ✔️ to leave
 
 
 class TestRemindersWhenFlow:

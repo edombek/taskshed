@@ -1,4 +1,9 @@
-"""Task lists, the reminder digest, and the action buttons on both."""
+"""One message per task, the reminder digest, and the buttons inside both.
+
+A task message owns its occurrence: tapping a button re-renders that very
+message (buttons off when the task is closed) — no confirmation messages,
+no menu follow-up after every tap.
+"""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -22,13 +27,14 @@ class DigestMixin:
         place, _ = loc
         await self._send_task_list(ctx, place)
 
+    # ---------- task buttons ----------
 
     async def _cb_done(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.mark_done(occ_id, ctx.ev.platform):
-            if not await self._refresh_task_msg(ctx):
+            if not await self._apply_task_msg(ctx, occ_id):
                 await ctx.reply(t("msg_done", ctx.lang, title=got[1].title))
 
     async def _cb_wip(self, ctx: Ctx, occ_id: int) -> None:
@@ -38,7 +44,7 @@ class DigestMixin:
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.start_work(occ_id):
-            if not await self._refresh_task_msg(ctx):
+            if not await self._apply_task_msg(ctx, occ_id):
                 await ctx.reply(t("msg_wip", ctx.lang, title=got[1].title))
 
     async def _cb_skip(self, ctx: Ctx, occ_id: int) -> None:
@@ -48,21 +54,27 @@ class DigestMixin:
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.skip(occ_id):
-            if not await self._refresh_task_msg(ctx):
+            if not await self._apply_task_msg(ctx, occ_id):
                 await ctx.reply(t("msg_skipped", ctx.lang, title=got[1].title))
 
     async def _cb_snooze(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
         if not got or got[1].user_id != ctx.user.id or got[0].status == "done":
             return
-        # ask *how long*, rather than silently snoozing a fixed hour
-        ctx.suppress_menu = True
-        await ctx.reply(t("snooze_ask", ctx.lang), [
-            [(t("btn_snz_15", ctx.lang), f"snz:{occ_id}:15"),
-             (t("btn_snz_60", ctx.lang), f"snz:{occ_id}:60")],
-            [(t("btn_snz_240", ctx.lang), f"snz:{occ_id}:240"),
-             (t("btn_snz_1440", ctx.lang), f"snz:{occ_id}:1440")],
-        ])
+        # ask *how long* — inside the task's own message whenever we own it
+        ask = t("snooze_ask", ctx.lang) + "\n"
+        if not await self._edit_task_msg(
+                ctx, occ_id, ask + self._task_line(ctx.lang, ctx.tz, got[0], got[1]),
+                self._snooze_rows(ctx.lang, occ_id)):
+            ctx.suppress_menu = True
+            await ctx.reply(t("snooze_ask", ctx.lang),
+                            self._snooze_rows(ctx.lang, occ_id))
+
+    async def _cb_snooze_back(self, ctx: Ctx, occ_id: int) -> None:
+        if not await self._apply_task_msg(ctx, occ_id):
+            ctx.suppress_menu = True
+            await ctx.reply(t("snooze_ask", ctx.lang),
+                            self._snooze_rows(ctx.lang, occ_id))
 
     async def _cb_snooze_set(self, ctx: Ctx, arg: str) -> None:
         occ_id_s, _, mins = arg.partition(":")
@@ -72,82 +84,66 @@ class DigestMixin:
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.snooze(int(occ_id_s), int(mins)):
-            await ctx.reply(t("msg_snoozed", ctx.lang, minutes=int(mins),
-                              title=got[1].title))
+            line = self._task_line(ctx.lang, ctx.tz, got[0], got[1]) + "\n" + t(
+                "task_snoozed_note", ctx.lang, minutes=int(mins))
+            if not await self._edit_task_msg(
+                    ctx, int(occ_id_s), line, self._task_rows(ctx.lang, got[0])):
+                await ctx.reply(t("msg_snoozed", ctx.lang, minutes=int(mins),
+                                  title=got[1].title))
 
-    # ---------- task list / digest ----------
+    # ---------- one task, one message ----------
 
-    async def _send_task_list(self, ctx: Ctx, place: PlaceDC) -> None:
-        today = datetime.now(ctx.tz).date()
-        occs = await self.store.occurrences_today(ctx.user.id, today, ctx.settings.tz,
-                                                  place_id=place.id)
-        if not occs:
-            await ctx.reply(t("tasks_empty", ctx.lang, place=place.name))
-            return
-        text, rows = self._render_tasks(ctx.lang, ctx.tz, place.name, occs, close=True)
-        mid = await ctx.reply(text, rows)
-        self._track_tl(ctx.user.id, ctx.account, mid, place.name,
-                       [o.id for o, _ in occs])
+    def _task_line(self, lang: str, tz: ZoneInfo, occ, task) -> str:
+        due = occ.due_at.astimezone(tz)
+        if occ.start_at is not None:
+            # work stretched over time: show the whole window
+            start = occ.start_at.astimezone(tz)
+            line = t("task_msg_range", lang, title=task.title,
+                     start=start.strftime("%d.%m %H:%M"),
+                     due=due.strftime("%d.%m %H:%M"))
+        else:
+            line = t("task_msg", lang, title=task.title,
+                     due=due.strftime("%d.%m %H:%M"))
+        if occ.status == "done":
+            line += t("task_done_mark", lang)
+        elif occ.status == "skipped":
+            line += t("task_skipped_mark", lang)
+        elif occ.status == "missed":
+            line += t("task_overdue_mark", lang)
+        elif occ.status == "in_progress":
+            line += t("task_started_mark", lang)
+        return line
 
-    def _render_tasks(self, lang: str, tz: ZoneInfo, place_name: str,
-                      occs: list[tuple], close: bool = False) -> tuple[str, ButtonRows]:
-        """(text, buttons) of a task list — shared by /задачи and digests.
+    def _task_rows(self, lang: str, occ) -> ButtonRows:
+        """Buttons of one task message; empty once the task is closed."""
+        if occ.status in ("done", "skipped"):
+            return []
+        if occ.status == "in_progress":
+            return [[(t("btn_done", lang), f"done:{occ.id}"),
+                     (t("btn_skip", lang), f"skip:{occ.id}")]]
+        return [[(t("btn_done", lang), f"done:{occ.id}"),
+                 (t("btn_wip", lang), f"wip:{occ.id}")],
+                [(t("btn_snooze", lang), f"snooze:{occ.id}"),
+                 (t("btn_skip", lang), f"skip:{occ.id}")]]
 
-        Closed rows (done/skipped) keep their line with a mark but lose the
-        buttons: they stay visible so an edited digest shows what happened.
-        """
-        lines = [t("tasks_header", lang, place=place_name)]
-        rows: ButtonRows = []
-        for i, (occ, task) in enumerate(occs, 1):
-            due = occ.due_at.astimezone(tz)
-            if occ.start_at is not None:
-                # work stretched over time: show the whole window
-                start = occ.start_at.astimezone(tz)
-                line = t("task_row_range", lang, n=i, title=task.title,
-                         start=start.strftime("%d.%m %H:%M"),
-                         due=due.strftime("%d.%m %H:%M"))
-            else:
-                line = t("task_row", lang, n=i, title=task.title,
-                         due=due.strftime("%d.%m %H:%M"))
-            if occ.status == "done":
-                line += t("task_done_mark", lang)
-            elif occ.status == "skipped":
-                line += t("task_skipped_mark", lang)
-            elif occ.status == "missed":
-                line += t("task_overdue_mark", lang)
-            elif occ.status == "in_progress":
-                line += t("task_started_mark", lang)
-            lines.append(line)
-            if occ.status in ("done", "skipped"):
-                continue
-            row = [(t("btn_done", lang), f"done:{occ.id}")]
-            if occ.status == "in_progress":
-                row.append((t("btn_skip", lang), f"skip:{occ.id}"))
-            else:
-                row += [(t("btn_wip", lang), f"wip:{occ.id}"),
-                        (t("btn_snooze", lang), f"snooze:{occ.id}"),
-                        (t("btn_skip", lang), f"skip:{occ.id}")]
-            rows.append(row)
-        if close and rows:
-            rows.append([(t("btn_list_close", lang), "tl:close")])
-        return "\n".join(lines), rows
+    def _snooze_rows(self, lang: str, occ_id: int) -> ButtonRows:
+        return [[(t("btn_snz_15", lang), f"snz:{occ_id}:15"),
+                 (t("btn_snz_60", lang), f"snz:{occ_id}:60")],
+                [(t("btn_snz_240", lang), f"snz:{occ_id}:240"),
+                 (t("btn_snz_1440", lang), f"snz:{occ_id}:1440")],
+                [(t("btn_back", lang), f"snzb:{occ_id}")]]
 
-    async def _refresh_task_msg(self, ctx: Ctx) -> bool:
-        """Redraw the task-list/digest message the tap came from.
+    async def _edit_task_msg(self, ctx: Ctx, occ_id: int, text: str,
+                             rows: ButtonRows) -> bool:
+        """Re-render the live task message of this occurrence in place.
 
-        A handled row loses its buttons, the rest stay tappable, and no new
-        message or menu is added: several tasks from one reminder can be
-        worked through inside a single message. False when the message is
-        unknown (restart, forwarded copy) — the caller falls back to a reply.
+        False when the chat has no live message for it (restart, forwarded
+        copy, already stripped) — the caller falls back to a reply + menu.
         """
         reg = self._tl_msgs.get((ctx.user.id, ctx.account.id), {})
         mid = ctx.ev.message_id
-        entry = reg.get(mid) if mid else None
-        if entry is None:
+        if not mid or reg.get(mid) != occ_id:
             return False
-        place_name, occ_ids = entry
-        occs = [got for oid in occ_ids if (got := await self.store.get_occurrence(oid))]
-        text, rows = self._render_tasks(ctx.lang, ctx.tz, place_name, occs, close=True)
         try:
             ok = await ctx.messenger.edit_buttons(ctx.account, mid, text, rows)
         except Exception:
@@ -159,61 +155,101 @@ class DigestMixin:
             if rows:
                 live[mid] = text
             else:
-                # nothing open left: close the message ourselves
-                live.pop(mid, None)
+                live.pop(mid, None)  # closed: the message keeps no keyboard
                 reg.pop(mid, None)
         ctx.replied = True
         ctx.suppress_menu = True
         return True
 
-    async def _cb_tl_close(self, ctx: Ctx) -> None:
-        """✔️ Готово: the list is dismissed — buttons off, no new message."""
-        reg = self._tl_msgs.get((ctx.user.id, ctx.account.id), {})
-        mid = ctx.ev.message_id
-        if not mid or mid not in reg:
+    async def _apply_task_msg(self, ctx: Ctx, occ_id: int) -> bool:
+        got = await self.store.get_occurrence(occ_id)
+        if not got:
+            return False
+        return await self._edit_task_msg(
+            ctx, occ_id, self._task_line(ctx.lang, ctx.tz, got[0], got[1]),
+            self._task_rows(ctx.lang, got[0]))
+
+    # ---------- sending ----------
+
+    async def _send_task_list(self, ctx: Ctx, place: PlaceDC) -> None:
+        today = datetime.now(ctx.tz).date()
+        occs = await self.store.occurrences_today(ctx.user.id, today, ctx.settings.tz,
+                                                  place_id=place.id)
+        if not occs:
+            await ctx.reply(t("tasks_empty", ctx.lang, place=place.name))
             return
-        live = self._kb_msgs.get((ctx.user.id, ctx.account.id), {})
-        try:
-            await ctx.messenger.edit_buttons(ctx.account, mid, live.get(mid, ""), [])
-        except Exception:
-            pass
-        live.pop(mid, None)
-        reg.pop(mid, None)
-        ctx.replied = True
-        ctx.suppress_menu = True
+        await ctx.reply(t("tasks_header", ctx.lang, place=place.name))
+        for occ, task in occs:
+            await self._send_task_msg(ctx, ctx.lang, ctx.tz, occ, task)
+
+    async def _send_task_msg(self, ctx: Ctx, lang: str, tz: ZoneInfo,
+                             occ, task) -> None:
+        text = self._task_line(lang, tz, occ, task)
+        rows = self._task_rows(lang, occ)
+        if not rows:
+            await ctx.messenger.send_text(ctx.account, text)
+            return
+        mid = await ctx.messenger.send_buttons(ctx.account, text, rows)
+        self._track_kb(ctx.user.id, ctx.account, mid, text)
+        self._track_tl(ctx.user.id, ctx.account, mid, occ.id)
 
     async def build_digest(self, user_id: int, settings: UserSettings, place: PlaceDC):
-        """(text, buttons, meta) for today's tasks at `place`, or None.
+        """(header, [(occ_id, text, rows)]) of today's tasks, or None for silence.
 
-        `meta` = (place name, occurrence ids): what the digest message shows,
-        so a tap on it can re-render that very message.
+        The header names the place; every task is a message of its own.
         """
         tz = ZoneInfo(settings.tz)
         today = datetime.now(tz).date()
-        occs = await self.store.occurrences_today(user_id, today, settings.tz, place_id=place.id)
+        occs = await self.store.occurrences_today(user_id, today, settings.tz,
+                                                  place_id=place.id)
         if not occs:
             return None
         lang = "ru"
         user = await self.store.get_user(user_id)
         if user:
             lang = user.language
-        text, rows = self._render_tasks(lang, tz, place.name, occs, close=True)
-        return text, rows, (place.name, [o.id for o, _ in occs])
+        items = [(occ.id, self._task_line(lang, tz, occ, task),
+                  self._task_rows(lang, occ)) for occ, task in occs]
+        return t("tasks_header", lang, place=place.name), items
+
+    async def send_digest(self, user_id: int, settings: UserSettings,
+                          place: PlaceDC, origin: Account | None = None) -> bool:
+        """Header + one message per task into every account the settings allow."""
+        digest = await self.build_digest(user_id, settings, place)
+        if digest is None:
+            return False
+        header, items = digest
+        accounts = await self.store.get_accounts(user_id)
+        if settings.notify_platforms == "primary":
+            if origin is not None:
+                accounts = [a for a in accounts if a.platform == origin.platform]
+            else:
+                accounts = sorted(accounts,
+                                  key=lambda a: a.last_seen or a.linked_at)[-1:]
+        for acc in accounts:
+            messenger = self.messengers.get(acc.platform)
+            if not messenger:
+                continue
+            await self._strip_keyboards(messenger, acc, user_id)
+            await messenger.send_text(acc, header)
+            for occ_id, text, rows in items:
+                if not rows:
+                    await messenger.send_text(acc, text)
+                    continue
+                mid = await messenger.send_buttons(acc, text, rows)
+                self._track_kb(user_id, acc, mid, text)
+                self._track_tl(user_id, acc, mid, occ_id)
+        return True
 
     async def _digest_now(self, user_id: int, origin: Account) -> bool:
         settings = await self.store.get_settings(user_id)
         loc = await self.store.get_location(user_id)
         if loc is None:
             return False
-        digest = await self.build_digest(user_id, settings, loc[0])
-        if digest is None:
-            return False
-        await self._fanout(user_id, settings, origin, *digest)
-        return True
+        return await self.send_digest(user_id, settings, loc[0], origin=origin)
 
     async def notify_user(self, user_id: int, text: str,
-                          buttons: ButtonRows | None = None,
-                          meta: tuple[str, list[int]] | None = None) -> None:
+                          buttons: ButtonRows | None = None) -> None:
         """Send to every linked account (or the most recently active one)."""
         settings = await self.store.get_settings(user_id)
         accounts = await self.store.get_accounts(user_id)
@@ -226,23 +262,5 @@ class DigestMixin:
                 if buttons:
                     mid = await messenger.send_buttons(acc, text, buttons)
                     self._track_kb(user_id, acc, mid, text)
-                    if meta:
-                        self._track_tl(user_id, acc, mid, *meta)
                 else:
                     await messenger.send_text(acc, text)
-
-    async def _fanout(self, user_id: int, settings: UserSettings,
-                      origin: Account | None, text: str, buttons: ButtonRows,
-                      meta: tuple[str, list[int]] | None = None) -> None:
-        accounts = await self.store.get_accounts(user_id)
-        for acc in accounts:
-            if settings.notify_platforms == "primary" and origin is not None:
-                if acc.platform != origin.platform:
-                    continue
-            messenger = self.messengers.get(acc.platform)
-            if messenger:
-                await self._strip_keyboards(messenger, acc, user_id)
-                mid = await messenger.send_buttons(acc, text, buttons)
-                self._track_kb(user_id, acc, mid, text)
-                if meta:
-                    self._track_tl(user_id, acc, mid, *meta)

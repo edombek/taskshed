@@ -103,7 +103,7 @@ class TestWorkInProgress:
     async def test_list_offers_wip_and_shows_the_window(self, env):
         app, store, task = await self._stretched_task(env)
         f = await send(env, "/задачи")
-        assert "с " in f.texts()[0] and " до " in f.texts()[0]
+        assert any("с " in m and " до " in m for m in f.texts())
         flat = [cb for row in prev_buttons(f) for _, cb in row]
         assert any(cb.startswith("wip:") for cb in flat)
         assert any(cb.startswith("done:") for cb in flat)
@@ -118,7 +118,7 @@ class TestWorkInProgress:
         # the overdue pass does not turn started work into missed
         assert await store.mark_overdue(datetime.now(UTC)) == 0
         f = await send(env, "/задачи")
-        assert "▶в работе" in f.texts()[0]
+        assert any("▶в работе" in m for m in f.texts())
         flat = [cb for row in prev_buttons(f) for _, cb in row]
         assert not any(cb.startswith("wip:") for cb in flat)
         assert not any(cb.startswith("snooze:") for cb in flat)
@@ -135,15 +135,17 @@ class TestWorkInProgress:
             "telegram", PID)).id))[0]
         digest = await app.build_digest(
             (await store.get_user_by_account("telegram", PID)).id, settings, place)
-        assert digest and any(cb.startswith("wip:") for row in digest[1] for _, cb in row)
+        assert digest and any(cb.startswith("wip:")
+                              for _, _, rows in digest[1] for row in rows
+                              for _, cb in row)
 
 
-class TestInPlaceUpdates:
-    """A tap on a task button redraws that very message: no new messages,
-    no main-menu follow-up — several tasks closed inside one digest."""
+class TestOneMessagePerTask:
+    """One task = one message. A button tap re-renders that very message:
+    closed task loses its keyboard, no new messages, no menu follow-up."""
 
     async def _list_with_two(self, env):
-        _, store, _ = env
+        _, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
         p = (await store.list_places(user.id))[0]
@@ -155,8 +157,9 @@ class TestInPlaceUpdates:
                                            {"n": 1, "anchor": anchor}, time(9, 0))
             await store.materialize_occurrences(task, datetime.now(UTC).date(),
                                                 1, "UTC")
-        f = await send(env, "/задачи")
-        return f.sent[-2]  # the list itself (the menu follow-up sits after)
+        await send(env, "/задачи")
+        assert fake.sent[0].buttons == []  # header: a plain text message
+        return fake.sent[1], fake.sent[2]  # the two task messages
 
     async def _tap(self, env, cb, msg_id):
         """Tap without the send() helper: it would wipe the edited message."""
@@ -165,55 +168,74 @@ class TestInPlaceUpdates:
         await app.handle(RawEvent("telegram", PID, callback=cb, message_id=msg_id))
         return fake.sent[before:]
 
-    async def test_taps_edit_the_list_and_never_add_menu(self, env):
-        lst = await self._list_with_two(env)
-        cbs = [cb for row in lst.buttons for _, cb in row]
-        assert "tl:close" in cbs
-        d1 = next(int(cb.split(":")[1]) for cb in cbs if cb.startswith("done:"))
-        d2 = next(int(cb.split(":")[1]) for cb in cbs if cb.startswith("done:")
-                  and int(cb.split(":")[1]) != d1)
-        assert not await self._tap(env, f"done:{d1}", lst.id)  # nothing new
-        assert "✅" in lst.text
-        left = [cb for row in lst.buttons for _, cb in row]
-        assert f"done:{d2}" in left and f"done:{d1}" not in left
-        assert not await self._tap(env, f"done:{d2}", lst.id)
-        # everything closed: the message disarms itself
-        assert lst.buttons == []
+    async def test_done_disarms_only_its_own_message(self, env):
+        a, b = await self._list_with_two(env)
+        d1 = next(int(cb.split(":")[1]) for row in a.buttons for _, cb in row
+                  if cb.startswith("done:"))
+        assert not await self._tap(env, f"done:{d1}", a.id)  # nothing new sent
+        assert "✅" in a.text and a.buttons == []
+        # the neighbour task keeps its keyboard untouched
+        assert any(cb.startswith("done:") for row in b.buttons for _, cb in row)
 
-    async def test_close_button_dismisses_the_list(self, env):
-        lst = await self._list_with_two(env)
-        assert not await self._tap(env, "tl:close", lst.id)
-        assert lst.buttons == []
+    async def test_wip_swaps_the_keyboard_in_place(self, env):
+        a, _ = await self._list_with_two(env)
+        d1 = next(int(cb.split(":")[1]) for row in a.buttons for _, cb in row
+                  if cb.startswith("wip:"))
+        assert not await self._tap(env, f"wip:{d1}", a.id)
+        assert "▶в работе" in a.text
+        flat = [cb for row in a.buttons for _, cb in row]
+        assert f"done:{d1}" in flat and f"skip:{d1}" in flat
+        assert not any(cb.startswith("wip:") for cb in flat)
 
-    async def test_stale_message_falls_back_to_the_old_reply(self, env):
+    async def test_snooze_picker_lives_in_the_same_message(self, env):
+        a, _ = await self._list_with_two(env)
+        d1 = next(int(cb.split(":")[1]) for row in a.buttons for _, cb in row
+                  if cb.startswith("snooze:"))
+        assert not await self._tap(env, f"snooze:{d1}", a.id)
+        flat = [cb for row in a.buttons for _, cb in row]
+        assert f"snz:{d1}:15" in flat and f"snzb:{d1}" in flat
+        assert not await self._tap(env, f"snz:{d1}:15", a.id)
+        assert "💤" in a.text  # the note landed on the task's own message
+        flat = [cb for row in a.buttons for _, cb in row]
+        assert f"done:{d1}" in flat  # still open, buttons are back
+
+    async def test_unknown_message_falls_back_to_the_old_reply(self, env):
         # unknown message id (restart, forwarded copy): reply + menu as before
-        lst = await self._list_with_two(env)
-        d1 = next(int(cb.split(":")[1]) for row in lst.buttons for _, cb in row
+        a, _ = await self._list_with_two(env)
+        d1 = next(int(cb.split(":")[1]) for row in a.buttons for _, cb in row
                   if cb.startswith("done:"))
         f = await send(env, cb=f"done:{d1}", msg="telegram-999")
         assert any("Готово" in t for t in f.texts())
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "cmd:tasks" in flat
-        assert lst.buttons  # the untouched original keeps its buttons
+        assert a.buttons  # the untouched original keeps its keyboard
 
 
-class TestDigestInPlace:
-    async def test_digest_from_scheduler_updates_in_place(self, env):
+class TestDigestPerTask:
+    async def test_digest_is_a_header_plus_one_message_per_task(self, env):
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
         pid = await place_id_of(store, user.id, "Дом")
         await store.set_location(user.id, pid)
         anchor = datetime.now(UTC).date().isoformat()
-        task = await store.create_task(user.id, pid, "A", ScheduleType.EVERY_N_DAYS,
-                                       {"n": 1, "anchor": anchor}, time(9, 0))
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
-        assert await app._digest_now(user.id, (await store.get_accounts(user.id))[0])
+        for title in ("A", "B"):
+            task = await store.create_task(user.id, pid, title,
+                                           ScheduleType.EVERY_N_DAYS,
+                                           {"n": 1, "anchor": anchor}, time(9, 0))
+            await store.materialize_occurrences(task, datetime.now(UTC).date(),
+                                                1, "UTC")
+        acc = (await store.get_accounts(user.id))[0]
+        base = len(fake.sent)
+        assert await app._digest_now(user.id, acc)
+        assert "Задачи" in fake.sent[base].text
+        assert fake.sent[base].buttons == []
+        assert len(fake.sent) == base + 3  # header + two task messages
         msg = fake.sent[-1]
         occ_id = next(int(cb.split(":")[1]) for row in msg.buttons
                       for _, cb in row if cb.startswith("done:"))
         before = len(fake.sent)
         await app.handle(RawEvent("telegram", PID, callback=f"done:{occ_id}",
                                   message_id=msg.id))
-        assert len(fake.sent) == before  # the digest itself absorbed the tap
+        assert len(fake.sent) == before  # the task message absorbed the tap
         assert "✅" in msg.text and msg.buttons == []

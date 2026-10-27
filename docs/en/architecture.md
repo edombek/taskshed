@@ -249,19 +249,17 @@ sequenceDiagram
                 Core-->>Sch: silent
             end
         end
-        Core->>Msg: digest text + per-task buttons<br/>(older keyboards of this chat get disarmed)
-        Msg->>U: 📋 Задачи «Работа»:<br/>1. Отчёт — до 18:00 [✅][⏭][⏭skip]<br/>2. Полка — с 26.10 09:00 до 30.10 18:00 [✅][▶][⏭][⏭skip]<br/>3. Созвон — до 12:00 ⚠️просрочено [✅][⏭][⏭skip]
+        Core->>Msg: digest header + one message per task<br/>(older keyboards of this chat get disarmed)
+        Msg->>U: 📋 Задачи «Работа» на сегодня:<br/>📌 Отчёт — до 18:00 [✅][▶][💤][⏭]<br/>📌 Полка — с 26.10 09:00 до 30.10 18:00 [✅][▶][💤][⏭]<br/>📌 Созвон — до 12:00 ⚠️просрочено [✅][▶][💤][⏭]
     end
-    U->>Msg: "done:42" button (any linked chat)
+    U->>Msg: "done:42" button on a task's own message
     Msg->>Core: ownership check → status=done + completions row
-    Core->>Msg: redraw the very digest message: handled row keeps its line<br/>with a ✅ mark but loses the buttons, the rest stay tappable
-    Msg->>U: no new message and no menu: one digest can close many tasks
-    U->>Msg: "wip:42" → status=in_progress: «▶ в работе»,<br/>row keeps its deadline but is never marked missed
-    U->>Msg: "snooze:42" → duration buttons [15м][1ч][4ч][+сутки]
-    U->>Msg: "snz:42:60" → reminder_at = now + 60 min
-    U->>Msg: "skip:42" → status=skipped: «⏭пропущено»,<br/>never flipped to missed, no penalty in stats
-    U->>Msg: "tl:close" ✔️ Готово — or the last row got handled:<br/>the message disarms its own buttons
-    Msg->>U: after any completed command outside a list:<br/>"Хотите сделать что-нибудь ещё?" + command menu
+    Core->>Msg: the very task message is re-rendered: ✅ mark,<br/>keyboard gone — no confirmation, no menu, no chat spam
+    U->>Msg: "wip:42" → the message now reads «▶ в работе»,<br/>keyboard becomes [✅][⏭]; the task is never marked missed
+    U->>Msg: "snooze:42" → the same message shows duration buttons<br/>[15м][1ч][4ч][+сутки][⬅️]
+    U->>Msg: "snz:42:60" → note «💤 Напомню через 60 мин», buttons return
+    U->>Msg: "skip:42" → status=skipped: «⏭пропущено»,<br/>keyboard off, never flipped to missed, no penalty in stats
+    Msg->>U: after any completed command outside a task message:<br/>"Хотите сделать что-нибудь ещё?" + command menu
 ```
 <!-- mermaid:end reminder-flow -->
 

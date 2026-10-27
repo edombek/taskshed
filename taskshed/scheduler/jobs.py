@@ -98,10 +98,8 @@ async def _tick_user(app: BotApp, store: Store, user_id: int, now: datetime) -> 
     fresh = loc is not None and (now - loc[1]).total_seconds() <= settings.location_ttl_hours * 3600
     if fresh:
         place = loc[0]
-        digest = await app.build_digest(user_id, settings, place)
-        if digest is None:
+        if not await app.send_digest(user_id, settings, place):
             return  # rule 4: nothing for this place — silent
-        await app.notify_user(user_id, *digest)
         await store.update_settings(user_id, last_reminded_at=now, pending_reminder=False)
         return
 

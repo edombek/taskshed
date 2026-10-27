@@ -25,15 +25,18 @@ class BotBase:
         # live keyboards per (user, account): {message_id: text}. A newer
         # answer strips these, so stale buttons cannot be tapped twice
         self._kb_msgs: dict[tuple[int, int], dict[str, str]] = {}
-        # live task-list/digest messages per (user, account): {message_id:
-        # (place_name, [occurrence ids])}. Taps on them re-render that very
-        # message, so one reminder can be worked through without chat spam
-        self._tl_msgs: dict[tuple[int, int], dict[str, tuple[str, list[int]]]] = {}
+        # live task messages per (user, account): {message_id: occurrence id}.
+        # One task per message: a tap re-renders that very message, and the
+        # keyboard dies with the task (done/skipped) — no chat spam
+        self._tl_msgs: dict[tuple[int, int], dict[str, int]] = {}
         # last tab of the task editor per user: where ⬅️ Назад goes back to
         self._edit_tab: dict[int, str] = {}
         # a "where are you?" that interrupted something else: the interrupted
         # dialog lives here and is replayed once the place is known
         self._await_loc: dict[int, dict] = {}
+        # live places screen per (user, account): its one message id; all
+        # place management (delete ask/confirm, list) redraws that message
+        self._pl_msgs: dict[tuple[int, int], str] = {}
 
     def _track_kb(self, user_id: int, account: Account, mid: str | None,
                   text: str) -> None:
@@ -42,11 +45,10 @@ class BotBase:
             self._kb_msgs.setdefault((user_id, account.id), {})[mid] = text
 
     def _track_tl(self, user_id: int, account: Account, mid: str | None,
-                  place_name: str, occ_ids: list[int]) -> None:
-        """Remember which occurrences a task-list message shows."""
+                  occ_id: int) -> None:
+        """Remember which occurrence a live task message owns."""
         if mid:
-            self._tl_msgs.setdefault((user_id, account.id), {})[mid] = (
-                place_name, occ_ids)
+            self._tl_msgs.setdefault((user_id, account.id), {})[mid] = occ_id
 
     async def _strip_keyboards(self, messenger: IMessenger, account: Account,
                                user_id: int, keep: str = "") -> None:
@@ -57,6 +59,7 @@ class BotBase:
         """
         live = self._kb_msgs.pop((user_id, account.id), {})
         live_tl = self._tl_msgs.pop((user_id, account.id), {})
+        self._pl_msgs.pop((user_id, account.id), None)
         for mid, text in live.items():
             if mid == keep:
                 continue

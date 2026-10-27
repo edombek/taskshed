@@ -100,15 +100,21 @@ class TaskWizardMixin:
         if w["kind"] == "addplace":
             wanted = defang(text.strip())[:80]
             if await self._find_place_by_name(ctx.user.id, wanted):
-                await ctx.reply(t("place_exists", ctx.lang))
+                note = t("place_exists", ctx.lang)
+                if not await self._note_on_places(ctx, note):
+                    await ctx.reply(note)
                 return
             place = await self.store.add_place(ctx.user.id, wanted)
             if place is None:
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
                                   hint=t("no_places", ctx.lang)))
                 return
-            self.wizards.pop(ctx.user.id, None)
-            await ctx.reply(t("place_added", ctx.lang, name=place.name))
+            note = t("place_added", ctx.lang, name=place.name)
+            # while the places screen lives, names are added onto it:
+            # the screen (and its add-by-text mode) stays open until ✔️
+            if not await self._note_on_places(ctx, note):
+                self.wizards.pop(ctx.user.id, None)
+                await ctx.reply(note)
             return
         if w["kind"] != "task":
             self.wizards.pop(ctx.user.id, None)

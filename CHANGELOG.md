@@ -6,13 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
-- **Task lists and reminder digests update in place**: a tap on ✅/▶/⏭
-  redraws that very message — the handled row keeps its line with a mark but
-  loses its buttons, the rest stay tappable, and a «✔️ Готово» row closes the
-  list. No more new message + main menu after every tap: several tasks due on
-  one tick can be worked through inside a single digest (when the last row is
-  handled the message disarms itself; unknown/forwarded copies fall back to
-  the old reply+menu behavior).
+- **One task, one message**: `/задачи` and reminder digests send a plain header
+  plus a message per task owning its occurrence. Tapping ✅/⏭ re-renders that
+  very message (mark on, keyboard off); ▶ leaves just [✅][⏭]; 💤 shows the
+  duration picker inside the same message. No confirmation messages and no
+  main-menu follow-up after every tap; unknown/forwarded copies fall back to
+  the old reply+menu behavior.
+- **The places screen is one live message**: typed names add places onto it,
+  🗑 asks for confirmation in place ([✅ Да] [✖️ Не удалять]), deletions and
+  re-adds redraw the same message, and «✔️ Готово» leaves (keyboard off).
 
 ### Removed
 - **The `.env` convention**: nothing ever loaded it (`load_dotenv` was never

@@ -115,7 +115,7 @@ class TestWhereAndTasks:
         await store.materialize_occurrences(task, today, 1, "UTC")
         await store.set_location(user.id, pid_home)
         f = await send(env, "/задачи")
-        assert "Полить цветы" in f.texts()[0]
+        assert any("Полить цветы" in m for m in f.texts())
         occ_cb = prev_buttons(f)[0][0][1]
         assert occ_cb.startswith("done:")
         occ_id = int(occ_cb.split(":")[1])

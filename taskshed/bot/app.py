@@ -206,8 +206,6 @@ class BotApp(
             await self._cb_place(ctx, int(arg))
         elif action == "loc" and arg == "later":
             await self._location_later(ctx)
-        elif action == "tl" and arg == "close":
-            await self._cb_tl_close(ctx)
         elif action == "sched":
             await self._cb_sched(ctx, arg)
         elif action == "wd":
@@ -228,8 +226,12 @@ class BotApp(
                 await self._wizard_ask_reminder(ctx, w)
         elif action == "pdel":
             await self._cb_place_delete(ctx, int(arg), False)
+        elif action == "pdno":
+            await self._cb_place_delete(ctx, int(arg), None)
         elif action == "pdelok":
             await self._cb_place_delete(ctx, int(arg), True)
+        elif action == "pl" and arg == "close":
+            await self._cb_places_close(ctx)
         elif action == "edt":  # task editor: open one task's card
             tab, _, tid = arg.partition(":")
             if tid.isdigit():
@@ -260,6 +262,8 @@ class BotApp(
             await self._cb_until(ctx, arg)
         elif action == "snz":
             await self._cb_snooze_set(ctx, arg)
+        elif action == "snzb":
+            await self._cb_snooze_back(ctx, int(arg))
         elif action == "lang":
             await self._set_lang(ctx, normalize(arg))
         elif action == "rem":

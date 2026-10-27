@@ -13,8 +13,9 @@ platform-independent core.
 ## Features
 
 - Tasks split by **places** you define yourself (`/places`) — or typed straight
-  into the task wizard, which creates them. Deleting a place asks first: its
-  tasks and their history go with it.
+  into the task wizard, which creates them. Place management is one live screen:
+  typed names add, 🗑 asks right in the message (deleting a place takes its
+  tasks and history), ✔️ Готово leaves.
 - Schedules: one-off tasks with a **start and a ready-by deadline** — or just a
   moment, when you tap **no deadline** — they can be moved to ▶ in progress
   (started work is never counted as missed), every
