@@ -113,14 +113,23 @@ class BotApp(
         if ctx.user.id in self._await_loc:
             # the place question owns the answer now: a typed place name is it,
             # anything else just asks the question again
-            place = await self._find_place_by_name(ctx.user.id, defang(text.strip()))
+            name = defang(text.strip())
+            place = await self._find_place_by_name(ctx.user.id, name)
             if place:
                 await self._location_chosen(ctx, place)
-            else:
-                await ctx.place_buttons(
-                    "where_question",
-                    [[(t("btn_loc_later", ctx.lang), "loc:later")]]
-                    + self._back_only(ctx))
+                return
+            ctx.suppress_menu = True  # the question is the screen, no menu on top
+            if not await self.store.list_places(ctx.user.id):
+                # with no places at all the question literally invites:
+                # "add one by text" — honor it instead of looping
+                fresh = await self.store.add_place(ctx.user.id, name)
+                if fresh:
+                    await self._location_chosen(ctx, fresh)
+                    return
+            await ctx.place_buttons(
+                "where_question",
+                [[(t("btn_loc_later", ctx.lang), "loc:later")]]
+                + self._back_only(ctx))
             return
         if wizard:
             await self._wizard_input(ctx, wizard, text)

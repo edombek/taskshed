@@ -17,6 +17,31 @@ class TestOnboarding:
         assert "добавлено" in f.texts()[0]
         assert len(await store.list_places(user.id)) == 1
 
+    async def test_cyrillic_start_alias(self, env):
+        f = await send(env, "/старт")
+        assert "Привет" in f.texts()[0]
+
+    async def test_where_question_with_no_places_honors_typed_name(self, env):
+        # the question says "add one by text": typing it must not loop
+        _, store, _ = env
+        f = await send(env, "/гдея")
+        assert "Где вы сейчас?" in f.texts()[0]
+        f = await send(env, "Дом")
+        assert "Текущее место: Дом" in f.texts()[0]
+        user = await store.get_user_by_account("telegram", PID)
+        loc = await store.get_location(user.id)
+        assert loc and loc[0].name == "Дом"
+
+    async def test_unknown_name_at_question_re_asks_without_menu(self, env):
+        await send(env, "Дом")
+        await send(env, "/гдея")
+        f = await send(env, "Луна")
+        assert "Где вы сейчас?" in f.texts()[0]
+        assert not any("Хотите сделать" in m for m in f.texts())
+        _, store, _ = env
+        user = await store.get_user_by_account("telegram", PID)
+        assert len(await store.list_places(user.id)) == 1  # «Луна» not created
+
     async def test_add_second_place_via_places_command(self, env):
         await send(env, "Дом")
         await send(env, "/места")
