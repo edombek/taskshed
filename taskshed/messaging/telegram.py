@@ -66,7 +66,8 @@ class TelegramAdapter:
             platform=self.platform,
             platform_user_id=str(ev.chat_id),
             text=ev.raw_text,
-            message_id=str(ev.message_id),
+            # NewMessage proxies to .message: the id lives in .id there
+            message_id=str(ev.id),
         ))
 
     async def _on_callback(self, ev) -> None:

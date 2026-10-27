@@ -54,7 +54,10 @@ def build_keyboard(buttons: ButtonRows) -> str:
 def parse_longpoll_update(update: dict) -> RawEvent | None:
     if update.get("type") != "message_new":
         return None
-    obj = update.get("object", {})
+    obj = update.get("object") or {}
+    if not isinstance(obj, dict):  # some update shapes ship a list here
+        log.debug("vk message_new with unexpected object: %.200r", obj)
+        return None
     msg = obj.get("message", obj)
     peer = msg.get("from_id") or msg.get("peer_id")
     if not peer:
@@ -113,6 +116,9 @@ class VkAdapter:
                                 "act": "a_check", "key": key, "ts": ts,
                                 "wait": 25}) as resp:
                             payload = await resp.json()
+                        if not isinstance(payload, dict):
+                            log.warning("vk long poll: odd payload: %.200r", payload)
+                            continue
                         if "failed" in payload:
                             server, key, ts = await self._server()
                             continue
@@ -120,8 +126,12 @@ class VkAdapter:
                         for upd in payload.get("updates", []):
                             ev = parse_longpoll_update(upd)
                             if ev:
+                                log.info("incoming %s peer=%s text=%r cb=%r",
+                                         upd.get("type"), ev.platform_user_id,
+                                         (ev.text or "")[:80], ev.callback)
                                 await self.app.handle(ev)
-                    except (TimeoutError, aiohttp.ClientError):
+                    except (TimeoutError, aiohttp.ClientError, ValueError):
+                        # ValueError: aiohttp's JSONDecodeError on empty replies
                         await asyncio.sleep(3)
                         server, key, ts = await self._server()
             except Exception as exc:

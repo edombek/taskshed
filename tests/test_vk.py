@@ -47,6 +47,10 @@ class TestParseUpdate:
         assert parse_longpoll_update({"type": "message_new",
                                       "object": {"message": {"from_id": 1, "text": ""}}}) is None
 
+    def test_list_object_does_not_crash(self):
+        assert parse_longpoll_update({"type": "message_new",
+                                      "object": [{"from_id": 1}]}) is None
+
 
 class TestLongPollServer:
     """A bad group_id must not kill the loop: fallback + loud failure."""
