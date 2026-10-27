@@ -121,6 +121,33 @@ class TestTimeInput:
         assert task.start_at.hour == soon.hour
         assert today <= task.start_at.date() <= today + timedelta(days=1)
 
+    async def test_no_deadline_keeps_it_a_plain_reminder(self, env):
+        # the «✖ Без срока» button: a moment to be reminded at, not an event
+        # stretched over the rest of the day
+        _, store, fake = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Позвонить в банк")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{home}")
+        await send(env, cb="sched:once")
+        f = await send(env, cb="now:")
+        assert "dtl:none" in [cb for row in f.last_buttons() for _, cb in row]
+        await send(env, cb="dtl:none")
+        await send(env, "09:00")
+        assert fake.find("добавлена")
+        task = (await store.list_tasks(user.id))[0]
+        assert task.deadline is None and task.start_at is not None
+        card = fake.texts()[0]
+        assert "🕐" in card and " до " not in card   # one moment, no window
+        today = datetime.now(UTC).date()
+        occs = await store.occurrences_in_range(
+            user.id,
+            datetime(today.year, today.month, today.day, tzinfo=UTC) - timedelta(days=1),
+            datetime(today.year, today.month, today.day, tzinfo=UTC) + timedelta(days=7))
+        assert len(occs) == 1
+
     async def test_now_button_starts_the_task_immediately(self, env):
         _, store, _ = env
         await send(env, "Дом")

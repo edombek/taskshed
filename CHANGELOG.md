@@ -132,6 +132,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **«▶ Сейчас» on the "when do you start?" step**: work that has already begun
   no longer needs a typed minute.
 
+- **«✖ Без срока — просто напомнить» on the ready-by step**: a one-off task can
+  stay a moment instead of an event stretched over the rest of the day. The card
+  then reads «🕐 27.10 13:00», and the hour map lights that single hour only —
+  no band from the start up to midnight (`stats.occurrence_hours` now takes the
+  task into account, not just the occurrence).
+
 ### Fixed
 - **The main menu comes back after every action**: the task-editor card and the
   places screen used to leave a dialog open in memory, so the *next* answer

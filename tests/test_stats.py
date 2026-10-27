@@ -148,6 +148,24 @@ class TestCharts:
         assert sorted(k for k, v in grid.items() if v["pending"]) == [
             (date(2026, 10, 26), 9), (date(2026, 11, 2), 18)]
 
+    def test_a_reminder_without_a_deadline_occupies_one_hour(self):
+        # «без срока» must not paint a band from the start to midnight
+        from taskshed.core.models import ScheduleType
+        from taskshed.core.stats import activity_by_hour, occurrence_hours
+
+        start = datetime(2026, 10, 26, 13, 15, tzinfo=UTC)
+        occ = TaskOccurrence(id=1, task_id=1, due_at=datetime(
+            2026, 10, 26, 23, 59, tzinfo=UTC), reminder_at=start,
+            start_at=start, status=OccurrenceStatus.PENDING)
+        task = Task(id=1, user_id=1, place_id=1, title="T",
+                    schedule_type=ScheduleType.ONCE, start_at=start, deadline=None)
+        assert occurrence_hours(occ, task) == [start]
+        grid = activity_by_hour([(occ, task)], "UTC")
+        assert [h for (_, h), v in grid.items() if v["pending"]] == [13]
+        # the very same occurrence is a window again once a deadline exists
+        task.deadline = datetime(2026, 10, 26, 16, 0, tzinfo=UTC)
+        assert len(occurrence_hours(occ, task)) > 1
+
     def test_per_day_marks_the_day_work_starts(self):
         occ = TaskOccurrence(id=1, task_id=1,
                              due_at=datetime(2026, 10, 27, 18, 0, tzinfo=UTC),

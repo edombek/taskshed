@@ -15,8 +15,9 @@ platform-independent core.
 - Tasks split by **places** you define yourself (`/places`) — or typed straight
   into the task wizard, which creates them. Deleting a place asks first: its
   tasks and their history go with it.
-- Schedules: one-off tasks with a **start and a ready-by deadline** (they can
-  be moved to ▶ in progress — started work is never counted as missed), every
+- Schedules: one-off tasks with a **start and a ready-by deadline** — or just a
+  moment, when you tap **no deadline** — they can be moved to ▶ in progress
+  (started work is never counted as missed), every
   N days, specific weekdays, day of month; every repeat is a materialized
   **occurrence** you can mark ✅ done, ⏭ postpone (15 min/1 h/4 h/1 day) or
   ⏭ skip right from the reminder message.

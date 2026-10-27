@@ -133,6 +133,8 @@ Checklist of the implementation roadmap. EN summary in
 - [x] One date/time parser (`bot/timeparse.py`) for every step + settings; it
       returns time-only / day-only / both and asks "did I read that right?"
       (✅/✖) whenever it guessed; «▶ Сейчас» button on the start step
+- [x] «Без срока» on the ready-by step: a one-off task can be a bare moment
+      (reminder only), drawn as one hour on the hour map, not a band
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

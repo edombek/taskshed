@@ -135,7 +135,7 @@
   "rem_when_interval_btn": "🔁 Every N minutes",
   "rem_mode_times": "at fixed times ({times})",
   "rem_mode_interval": "every {minutes} min",
-  "wizard_ask_until": "Finish it by when? A bare time (13.00) means the same day; Enter means 23:59.",
+  "wizard_ask_until": "Finish it by when? A bare time (13.00) means the same day; Enter means 23:59; “No deadline” keeps it a plain reminder.",
   "btn_until_eod": "⏎ same day, 23:59",
   "btn_until_next_day": "next day, 18:00",
   "btn_until_week": "in a week, 18:00",
@@ -183,5 +183,8 @@
   "btn_now": "▶ Now",
   "when_confirm": "I read: {when}. Right?",
   "when_yes": "✅ Yes",
-  "when_no": "✖ No, something else"
+  "when_no": "✖ No, something else",
+  "btn_until_none": "✖ No deadline — just remind me",
+  "save_when_moment": "🕐 {when}",
+  "save_when_soon": "🕐 Soon"
 }

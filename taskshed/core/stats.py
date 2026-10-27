@@ -91,15 +91,19 @@ def occurrence_moment(occ: TaskOccurrence) -> datetime:
 HOUR_BLOCK_HOURS = 24
 
 
-def occurrence_hours(occ: TaskOccurrence) -> list[datetime]:
+def occurrence_hours(occ: TaskOccurrence, task: Task | None = None) -> list[datetime]:
     """Hours an occurrence occupies: one moment, or the whole work window.
 
     A task stretched over time («с 10:00 до 14:00») keeps every hour between
     its start and its ready-by moment busy, which is how the owner reads the
-    hour grid; very long windows only mark their boundaries.
+    hour grid; very long windows only mark their boundaries. A one-off task
+    without a ready-by moment is a plain reminder: it occupies its own hour,
+    never a band up to midnight.
     """
     start = occurrence_moment(occ)
     if occ.start_at is None or occ.due_at <= start:
+        return [start]
+    if task is not None and task.schedule_type == "once" and task.deadline is None:
         return [start]
     if occ.due_at - start > timedelta(hours=HOUR_BLOCK_HOURS):
         return [start, occ.due_at]
@@ -123,9 +127,9 @@ def activity_by_hour(occs: list[tuple[TaskOccurrence, Task]],
     hours: dict[tuple[date, int], dict] = defaultdict(
         lambda: {"done": 0, "missed": 0, "skipped": 0, "pending": 0}
     )
-    for occ, _ in occs:
+    for occ, task in occs:
         cell_status = _status_of(occ)
-        for stamp in occurrence_hours(occ):
+        for stamp in occurrence_hours(occ, task):
             local = stamp.astimezone(tzinfo)
             hours[(local.date(), local.hour)][cell_status] += 1
     return dict(hours)

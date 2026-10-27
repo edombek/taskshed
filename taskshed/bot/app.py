@@ -542,7 +542,8 @@ class BotApp:
             await ctx.reply(t("wizard_ask_until", ctx.lang), [
                 [(t("btn_until_eod", ctx.lang), "dtl:eod")],
                 [(t("btn_until_next_day", ctx.lang), "dtl:next18"),
-                 (t("btn_until_week", ctx.lang), "dtl:week18")]] + back)
+                 (t("btn_until_week", ctx.lang), "dtl:week18")],
+                [(t("btn_until_none", ctx.lang), "dtl:none")]] + back)
         elif step == "anchor":
             await ctx.reply(t("wizard_ask_anchor_date", ctx.lang), [
                 [(t("btn_today", ctx.lang), "dt:0"),
@@ -814,7 +815,7 @@ class BotApp:
         sdata: dict = {}
         deadline = start_at = None
         if stype == "once":
-            deadline, start_at = d["deadline"], d.get("start")
+            deadline, start_at = d.get("deadline"), d.get("start")
         elif stype == "every_n_days":
             sdata = {"n": d["n"], "anchor": d["anchor"]}
         elif stype == "weekdays":
@@ -898,6 +899,14 @@ class BotApp:
                          due=due.strftime(fmt))
             else:
                 when = t("save_when_once", ctx.lang, due=due.strftime(fmt))
+        elif task.schedule_type == "once":
+            # no ready-by: a plain reminder at one moment, not a window
+            moment = task.start_at or task.deadline
+            if moment is not None:
+                when = t("save_when_moment", ctx.lang,
+                         when=moment.astimezone(tz).strftime(fmt))
+            else:
+                when = t("save_when_soon", ctx.lang)
         elif task.schedule_type == "every_n_days":
             anchor = str(task.schedule_data.get("anchor", ""))
             try:
@@ -1237,6 +1246,11 @@ class BotApp:
         if not w or w.get("step") != "until":
             return
         local = w["data"]["start"].astimezone(ctx.tz)
+        if arg == "none":
+            # a plain reminder, not an event stretched over time
+            w["data"]["deadline"] = None
+            await self._wizard_ask_reminder(ctx, w)
+            return
         if arg == "eod":
             until = datetime(local.year, local.month, local.day, 23, 59,
                              tzinfo=ctx.tz)
@@ -1246,22 +1260,6 @@ class BotApp:
         else:
             return
         w["data"]["deadline"] = until
-        await self._wizard_ask_reminder(ctx, w)
-
-    async def _set_deadline(self, ctx: Ctx, w: dict, d: date,
-                            tval: time | None) -> None:
-        """Shared tail of deadline entry (button or typed HH:MM)."""
-        if tval is None:
-            await ctx.reply(t("wizard_bad_input", ctx.lang,
-                              hint=t("wizard_ask_time", ctx.lang)))
-            return
-        deadline = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
-                            tzinfo=ctx.tz)
-        if deadline.date() < datetime.now(ctx.tz).date():
-            await ctx.reply(t("wizard_deadline_past", ctx.lang,
-                              hint=t("wizard_ask_time", ctx.lang)))
-            return
-        w["data"]["deadline"] = deadline
         await self._wizard_ask_reminder(ctx, w)
 
     async def _cb_place(self, ctx: Ctx, place_id: int) -> None:
