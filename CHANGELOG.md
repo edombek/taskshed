@@ -157,6 +157,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   though the task repeated there. A week the horizon touches is now planned to
   its Sunday, and occurrences are materialized across it.
 
+### Changed
+- **The weekly hour map is one week long, always**: seven day rows from Monday
+  to Sunday of the current week, instead of whatever the horizon and the oldest
+  data happened to add up to (it was 13 rows last week). Longer periods still
+  trim to their data and stay under 24 rows.
+- **Charts label their axes, the hour map loses its legend**: the daily map is
+  captioned «недели» / «дни недели», the hour map «часы» / «дни». The color
+  legend is dropped from the hour map — the caption under the picture already
+  explains every color, so the space is better spent naming the axes.
+
 ### Fixed
 - **The main menu comes back after every action**: the task-editor card and the
   places screen used to leave a dialog open in memory, so the *next* answer

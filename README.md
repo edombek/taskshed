@@ -41,9 +41,11 @@ platform-independent core.
   activity heatmap (missed / planned / skipped markers, drawn forward to the
   horizon from your settings — a week by default, always in whole weeks — and
   back only as far as real tasks go) plus an **hour-level map for short
-  periods** that marks missed and still-planned work, outlines the hour you are
-  standing in, shows top tasks/places and the completion trend — for any period
-  or the whole history.
+  periods** that marks missed and still-planned work and outlines the hour you
+  are standing in — a weekly hour map always covers one week, Monday to Sunday
+  — plus top tasks/places and the completion trend, for any period or the whole
+  history. Both maps name their axes; the caption under each picture explains
+  the colors, so the hour map skips the legend.
 - **Multi-account**: link your Telegram and VK identities with a one-time
   code (`/link`); data and reminders are shared.
 - Chat interfaces in **Russian and English** (`/lang`).

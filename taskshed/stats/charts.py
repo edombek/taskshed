@@ -92,7 +92,6 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
     """
     from datetime import timedelta
 
-    from matplotlib.lines import Line2D
     from matplotlib.patches import Rectangle
 
     if day_range:
@@ -106,8 +105,8 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
 
     # one unit per row/column on both axes (labels live inside the limits), so
     # cells are square and the picture grows with the number of squares
-    x_lo, x_hi = -2.2, 24.0
-    y_hi, y_lo = n_days + 0.9, -0.6
+    x_lo, x_hi = -3.0, 24.0
+    y_hi, y_lo = n_days + 1.2, -0.6  # y_hi is the bottom edge: axis is inverted
     figsize = _grid_figsize(x_hi - x_lo, y_hi - y_lo)
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(HEAT_BG)
@@ -147,30 +146,18 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
     for hour in range(0, 24, 3):
         ax.text(hour + 0.43, n_days + 0.3, f"{hour:02d}", fontsize=6.5,
                 ha="center", va="center", color=HEAT_TEXT)
+    # what the axes mean — the colors themselves are explained in the caption
+    ax.text(12, n_days + 0.95, t("ax_hours", lang), fontsize=6.5,
+            ha="center", va="center", color=HEAT_TEXT)
+    ax.text(-2.7, n_days / 2, t("ax_days", lang), fontsize=6.5, rotation=90,
+            ha="center", va="center", color=HEAT_TEXT)
 
     ax.set_xlim(x_lo, x_hi)
     ax.set_ylim(y_hi, y_lo)  # inverted: the first day on top
     ax.axis("off")
 
-    handles = [
-        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
-               markerfacecolor=HEAT_GREENS[4], markeredgecolor="none",
-               label=_legend(lang)[0]),
-        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
-               markerfacecolor=HEAT_MISSED, markeredgecolor="none",
-               label=_legend(lang)[1]),
-        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
-               markerfacecolor=HEAT_PENDING, markeredgecolor="none",
-               label=_legend(lang)[2]),
-        Line2D([0], [0], marker="s", linestyle="none", markersize=6,
-               markerfacecolor=HEAT_SKIPPED, markeredgecolor="none",
-               label=_legend(lang)[3]),
-    ]
-    if figsize[0] >= LEGEND_MIN_W:
-        leg = ax.legend(handles=handles, loc="upper center", fontsize=7, ncols=4,
-                        frameon=False, bbox_to_anchor=(0.5, -0.02))
-        for txt in leg.get_texts():
-            txt.set_color(HEAT_TEXT)
+    # no color legend here: the message caption under the picture already
+    # spells out what every color means, the axes are what needs naming
     fig.savefig(out_path, dpi=_dpi_for(*fig.get_size_inches()),
               facecolor=HEAT_BG, bbox_inches="tight")
     plt.close(fig)
@@ -258,7 +245,7 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
     # one unit per week column and per weekday row on both axes (the labels sit
     # inside the limits): cells are square, the picture grows with their count
     x_lo, x_hi = -2.4, float(n_weeks)
-    y_hi, y_lo = 6.9, -1.3
+    y_hi, y_lo = 7.9, -1.3  # y_hi is the bottom edge: axis is inverted
     figsize = _grid_figsize(x_hi - x_lo, y_hi - y_lo)
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor(HEAT_BG)
@@ -304,6 +291,11 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
     for row, key in ((0, "hm_mon"), (2, "hm_wed"), (4, "hm_fri")):
         ax.text(-0.25, row + 0.43, t(key, lang), fontsize=7, ha="right",
                 va="center", color=HEAT_TEXT)
+    # what the axes are: columns are whole weeks, rows are weekdays
+    ax.text(n_weeks / 2, 7.4, t("ax_weeks", lang), fontsize=7, ha="center",
+            va="center", color=HEAT_TEXT)
+    ax.text(-2.1, 3.4, t("ax_weekdays", lang), fontsize=7, rotation=90,
+            ha="center", va="center", color=HEAT_TEXT)
 
     ax.set_xlim(x_lo, x_hi)
     # bottom must clear the Sunday row: cells span row..row+0.86, Sunday is

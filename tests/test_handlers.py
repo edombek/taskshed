@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -1427,6 +1428,25 @@ class TestChartHorizonAndHours:
         await store.update_settings(user.id, stats_horizon_days=30)
         await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
         assert any(m.image for m in fake.sent)
+
+    async def test_week_hour_map_is_always_one_week(self, env):
+        # seven day rows, Monday to Sunday, whatever the horizon or the data
+        app, _, _ = env
+        tz = ZoneInfo("UTC")
+        today = datetime.now(UTC).date()
+        monday = today - timedelta(days=today.weekday())
+        for back, ahead in ((30, 8), (7, 7), (0, 1)):
+            first, last = app._hour_window(
+                "week", {(today, 9): {"done": 1}},
+                datetime.now(UTC) - timedelta(days=back),
+                datetime.now(UTC) + timedelta(days=ahead), tz)
+            assert (first, last) == (monday, monday + timedelta(days=6))
+        # longer periods still trim to their data and stay under 24 rows
+        first, last = app._hour_window(
+            "month", {(today, 9): {"done": 1}},
+            datetime.now(UTC) - timedelta(days=30),
+            datetime.now(UTC) + timedelta(days=8), tz)
+        assert first == today and (last - first).days <= 24
 
     async def test_planned_week_is_planned_whole(self, env):
         # a week the horizon touches is filled to its Sunday: no planned square

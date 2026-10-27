@@ -187,5 +187,9 @@
   "btn_until_none": "✖ Без срока — просто напомнить",
   "save_when_moment": "🕐 {when}",
   "save_when_soon": "🕐 Скоро",
-  "btn_loc_later": "⏭ Не сейчас"
+  "btn_loc_later": "⏭ Не сейчас",
+  "ax_hours": "часы",
+  "ax_days": "дни",
+  "ax_weeks": "недели",
+  "ax_weekdays": "дни недели"
 }

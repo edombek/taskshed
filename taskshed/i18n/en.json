@@ -187,5 +187,9 @@
   "btn_until_none": "✖ No deadline — just remind me",
   "save_when_moment": "🕐 {when}",
   "save_when_soon": "🕐 Soon",
-  "btn_loc_later": "⏭ Not now"
+  "btn_loc_later": "⏭ Not now",
+  "ax_hours": "hours",
+  "ax_days": "days",
+  "ax_weeks": "weeks",
+  "ax_weekdays": "weekdays"
 }

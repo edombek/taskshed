@@ -537,6 +537,28 @@ class BotApp:
                            total=a["total"], percent=pct))
         return "\n".join(lines)
 
+    def _hour_window(self, period: str, grid: dict, start: datetime,
+                     end: datetime, tzinfo: ZoneInfo) -> tuple[date, date]:
+        """Day rows of the hour map.
+
+        A week is always exactly that week — Monday to Sunday, seven rows,
+        even when the days at the edges are empty. Longer periods reach back
+        only as far as their data goes and never grow past 24 rows, because
+        beyond that it stops being an hour-level picture.
+        """
+        if period == "week":
+            first = datetime.now(tzinfo).date()
+            first -= timedelta(days=first.weekday())
+            return first, first + timedelta(days=6)
+        first, last = start.astimezone(tzinfo).date(), end.astimezone(tzinfo).date()
+        if grid:
+            oldest = min(d for d, _ in grid)
+            if oldest > first:
+                first = oldest
+        if (last - first).days > 24:
+            first = last - timedelta(days=24)
+        return first, last
+
     async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str,
                           start: datetime, end: datetime) -> None:
         import os
@@ -566,14 +588,7 @@ class BotApp:
                 # day rows × hour columns: what a short period really looked like
                 grid = sagg.activity_by_hour(past, ctx.settings.tz)
                 tzinfo = ZoneInfo(ctx.settings.tz)
-                first = start.astimezone(tzinfo).date()
-                last = end.astimezone(tzinfo).date()
-                if grid:  # back only as far as the data goes, no empty run of
-                    oldest = min(d for d, _ in grid)  # days before the first task
-                    if oldest > first:
-                        first = oldest
-                if (last - first).days > 24:  # more rows than this stops being
-                    first = last - timedelta(days=24)  # an hour-level picture
+                first, last = self._hour_window(period, grid, start, end, tzinfo)
                 path = os.path.join(tmp, "hours.png")
                 if not charts.hourly_heatmap(
                         grid, ctx.lang, path, (first, last),

@@ -139,6 +139,8 @@ Checklist of the implementation roadmap. EN summary in
       padded weeks); materialize the window, never plan before a rule's own date
 - [x] Horizon rounded up to its Sunday (whole weeks planned, no empty right
       column) and the hour map outlines the current hour with a minute tick
+- [x] Hour map: week period = exactly Mon–Sun, no legend; both maps name their
+      axes
 - [x] Modal «Где вы сейчас?»: an open wizard/list intent is parked, the place
       answer (button or typed name) resumes it; «⏭ Не сейчас» skips the question
 
