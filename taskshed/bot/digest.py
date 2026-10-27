@@ -8,6 +8,7 @@ as one brief line-up, and a «Готово» button under the last message ends 
 round and hands the main menu back.
 """
 
+import logging
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -17,6 +18,8 @@ from taskshed.core.models import Place as PlaceDC
 from taskshed.core.scheduling import in_notice_window
 from taskshed.i18n import t
 from taskshed.messaging.base import ButtonRows, IMessenger
+
+log = logging.getLogger(__name__)
 
 NOTICE_OTHERS_LIMIT = 12
 
@@ -264,6 +267,9 @@ class DigestMixin:
         tz = ZoneInfo(settings.tz)
         header = t("notif_header_morning" if morning else "notif_header_repeat",
                    lang, place=place.name)
+        # what a live check needs in the log: which set went where
+        log.info("notice for user %s at «%s»: %d here, %d elsewhere (morning=%s)",
+                 user_id, place.name, len(mine), len(others), morning)
         for acc in await self._accounts_for(settings, origin):
             messenger = self.messengers.get(acc.platform)
             if not messenger:

@@ -189,9 +189,16 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Migration `a7f3c2d81b64` (settings → `morning_time`/`nag_interval_min`/
       `last_morning_at`/`last_notified_at`, `reminder_at` → `notify_at`, plan
       columns converted to the owner's wall-clock); applied to the dev DB.
-- [ ] Live re-verification in Telegram: wizard deadline+lead, `/задачи` notice
-      with «Готово», `/настройки` morning/T/tz (replan), morning digest and the
-      T-repeat in `bot.log`.
+- [x] Live check in Telegram (2026-10-27): the morning digest went out at
+      `morning_time` as header + one message per task of the current place +
+      a brief line for the other place + one ✅ «Готово»; the
+      every-`nag_interval_min` repeat re-sent it five minutes later
+      (`last_notified_at` moved, `last_morning_at` did not). Occurrence rows
+      carry the wall-clock deadline (23:59 MSK → `due_at` 20:59Z) and
+      `notify_at = due_at − lead`.
+- [ ] Interactive walk in Telegram: wizard deadline + lead, tapping ✅/💤/⏭ and
+      «Готово» inside a notice, `/настройки` morning moment / T / tz (the open
+      repeats must move with the zone).
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
