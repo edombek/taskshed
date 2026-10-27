@@ -37,7 +37,8 @@ platform-independent core.
   the bot says nothing. Stale location → it just asks "Where are you now?".
 - **Statistics**: text summary, CSV/XLSX export, PNG charts — a GitHub-style
   activity heatmap (missed / planned / skipped markers, always drawn up to the
-  horizon ahead, default one week) plus an **hour-level map for short periods**
+  horizon ahead — default one week, and never shorter than the period being
+  drawn) plus an **hour-level map for short periods**
   that marks missed and still-planned work too, top tasks/places, completion
   trend — for any period or the whole history.
 - **Multi-account**: link your Telegram and VK identities with a one-time

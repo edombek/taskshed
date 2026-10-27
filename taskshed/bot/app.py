@@ -192,10 +192,11 @@ class BotApp:
             except Exception:
                 log.exception("menu follow-up failed for %s", user.id)
 
-    async def ensure_materialized(self, ctx: Ctx) -> None:
+    async def ensure_materialized(self, ctx: Ctx, extra_days: int = 0) -> None:
         today = datetime.now(ctx.tz).date()
         # charts may look further ahead than the default reminder horizon
-        horizon = max(self.cfg.occurrence_horizon_days, ctx.settings.stats_horizon_days)
+        horizon = max(self.cfg.occurrence_horizon_days,
+                      ctx.settings.stats_horizon_days, extra_days)
         for task in await self.store.list_tasks(ctx.user.id):
             await self.store.materialize_occurrences(task, today, horizon, ctx.settings.tz)
 
@@ -354,10 +355,13 @@ class BotApp:
         # charts look stats_horizon_days into the future, so planned tasks are
         # visible; text/CSV reports keep describing what already happened
         chart = fmt in ("chart", "график", "hours")
-        future = max(1, ctx.settings.stats_horizon_days) if chart else 1
-        end = now + timedelta(days=future)
+        # a chart looks as far ahead as it looks back (and never less than the
+        # user's own horizon): a repeating task is then drawn on every planned
+        # day of the period, not only on those inside the short reminder window
+        ahead = max(1, ctx.settings.stats_horizon_days, days or 365) if chart else 1
+        end = now + timedelta(days=ahead)
         if chart:
-            await self.ensure_materialized(ctx)
+            await self.ensure_materialized(ctx, ahead)
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
         # planned (future) occurrences are kept on purpose: they show as
         # pending/«в плане» in reports and as blue insets on the heatmap

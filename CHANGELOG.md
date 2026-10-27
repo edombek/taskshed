@@ -165,3 +165,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A typed ready-by time was refused**: «До какого времени нужно закончить?»
   read a lone `13.00` as a date (month 00) and answered «Не понял», and the same
   happened on the start step. One reader now handles both, in every step.
+- **Repeating tasks were missing days on longer charts**: a month chart looked
+  only `stats_horizon_days` (a week by default) ahead, so occurrences further
+  out had never been materialized and the map lit just the first days. A chart
+  now looks as far ahead as the period it draws (week → 7 days, month → 30,
+  year → 365), never less than the user's horizon, and materializes that whole
+  window first — an every-3-days task is drawn on every planned day of the
+  month, not on three of them.
