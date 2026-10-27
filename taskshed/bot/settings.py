@@ -1,0 +1,199 @@
+"""The per-user settings screen and the values it awaits by text."""
+
+from zoneinfo import ZoneInfo
+
+from taskshed.bot.context import Ctx
+from taskshed.bot.timeparse import read_clock
+from taskshed.core.models import Platform
+from taskshed.i18n import normalize, t
+
+
+class SettingsMixin:
+
+    async def _cmd_lang(self, ctx: Ctx, arg: str) -> None:
+        lang = normalize(arg) if arg in ("ru", "en", "русский", "russian") else None
+        if lang:
+            await self._set_lang(ctx, lang)
+            return
+        ctx.suppress_menu = True
+        await ctx.reply(t("lang_menu", ctx.lang),
+                        [[("Русский", "lang:ru"), ("English", "lang:en")],
+                         [(t("btn_back", ctx.lang), "menu:back")]])
+
+    async def _set_lang(self, ctx: Ctx, lang: str) -> None:
+        await self.store.set_language(ctx.user.id, lang)
+        ctx.user.language = lang
+        ctx.lang = lang
+        if (ctx.user.id, ctx.account.id) in self._rem_msgs:
+            # the settings screen itself switches language — no extra message
+            await self._settings_status(ctx)
+            return
+        await ctx.reply(t("lang_set", lang))
+
+    async def _cmd_settings(self, ctx: Ctx, _: str) -> None:
+        await self._settings_status(ctx)
+
+
+    @staticmethod
+    def _platform_label(name: str) -> str:
+        return {"telegram": "Telegram", "vk": "VK"}.get(name, name.title())
+
+    async def _settings_status(self, ctx: Ctx) -> None:
+        """One screen with everything this user can configure."""
+        st = ctx.settings
+        accounts = await self.store.get_accounts(ctx.user.id)
+        linked = {str(a.platform) for a in accounts}
+        platforms = ", ".join(
+            f"{self._platform_label(p)} {'✓' if p in linked else '✗'}"
+            for p in (str(e) for e in Platform))
+        status = t("settings_status", ctx.lang,
+                   on=t("rem_on" if st.reminders_on else "rem_off", ctx.lang),
+                   mode=self._rem_mode_label(st, ctx.lang),
+                   quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
+                   ttl=st.location_ttl_hours, horizon=st.stats_horizon_days,
+                   tz=st.tz, platforms=platforms,
+                   language="Русский" if ctx.lang == "ru" else "English")
+        rows = [
+            [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
+            [(t("btn_rem_when", ctx.lang), "rem:when")],
+            [(t("btn_rem_quiet", ctx.lang), "rem:quiet"),
+             (t("btn_rem_ttl", ctx.lang), "rem:ttl")],
+            [(t("btn_rem_tz", ctx.lang), "rem:tz"),
+             (t("btn_rem_horizon", ctx.lang), "rem:horizon")],
+            [(t("btn_rem_lang", ctx.lang), "rem:lang"),
+             (t("btn_rem_link", ctx.lang), "rem:link")],
+        ]
+        for acc in accounts:
+            if acc.id != ctx.account.id:
+                rows.append([(t("btn_unlink", ctx.lang,
+                                 platform=self._platform_label(str(acc.platform))),
+                              f"rem:unlink:{acc.id}")])
+        rows.append([(t("btn_back", ctx.lang), "menu:back")])
+        ctx.suppress_menu = True  # this screen *is* a menu: ⬅️ Назад closes it
+        key = (ctx.user.id, ctx.account.id)
+        mid = self._rem_msgs.get(key)
+        # other keyboards of this chat go stale; this one is re-rendered below
+        await self._strip_keyboards(ctx.messenger, ctx.account, ctx.user.id,
+                                    keep=mid or "")
+        if mid and await ctx.messenger.edit_buttons(ctx.account, mid, status, rows):
+            self._track_kb(ctx.user.id, ctx.account, mid, status)
+            ctx.replied = True
+            return
+        new_id = await ctx.messenger.send_buttons(ctx.account, status, rows)
+        ctx.replied = True
+        if new_id:
+            self._rem_msgs[key] = new_id
+            self._track_kb(ctx.user.id, ctx.account, new_id, status)
+
+    def _rem_mode_label(self, st, lang: str) -> str:
+        if st.remind_mode == "times":
+            return t("rem_mode_times", lang, times=" ".join(st.remind_times))
+        return t("rem_mode_interval", lang, minutes=st.remind_interval_min)
+
+    async def _cb_rem(self, ctx: Ctx, arg: str) -> None:
+        if arg == "toggle":
+            st = await self.store.update_settings(
+                ctx.user.id, reminders_on=not ctx.settings.reminders_on,
+            )
+            ctx.settings = st
+            await self._settings_status(ctx)
+            return
+        if arg == "when":
+            # one entry point for both modes: pick the mode, then the value
+            ctx.suppress_menu = True
+            await ctx.reply(
+                t("rem_when_ask", ctx.lang,
+                  mode=self._rem_mode_label(ctx.settings, ctx.lang)), [
+                    [(t("rem_when_times_btn", ctx.lang), "rem:times")],
+                    [(t("rem_when_interval_btn", ctx.lang), "rem:interval")],
+                    [(t("btn_back", ctx.lang), "rem:back")],
+                ])
+            return
+        if arg == "back":
+            # leave the sub-question without leaving the settings screen
+            self._pending_inputs.pop(ctx.user.id, None)  # drop awaited value
+            await self._settings_status(ctx)
+            return
+        if arg == "lang":
+            ctx.suppress_menu = True
+            await ctx.reply(t("lang_menu", ctx.lang),
+                            [[("Русский", "lang:ru"), ("English", "lang:en")],
+                             [(t("btn_back", ctx.lang), "rem:back")]])
+            return
+        if arg == "link":
+            code = await self.store.create_link_code(ctx.user.id, ctx.ev.platform)
+            ctx.suppress_menu = True
+            await ctx.reply(t("link_code_msg", ctx.lang, code=code),
+                            [[(t("btn_back", ctx.lang), "rem:back")]])
+            return
+        if arg.startswith("unlink:"):
+            await self._cb_unlink_acc(ctx, arg.split(":", 1)[1])
+            return
+        if arg in ("times", "interval", "quiet", "ttl", "tz", "horizon"):
+            self._pending_inputs[ctx.user.id] = f"reminput:{arg}"
+            ctx.suppress_menu = True  # the next message is the value itself
+            await ctx.reply(t(f"rem_ask_{arg}", ctx.lang),
+                            [[(t("btn_back", ctx.lang), "rem:back")]])
+
+    async def _cb_unlink_acc(self, ctx: Ctx, acc_id: str) -> None:
+        """Unlinking from the settings screen: the row named the account."""
+        if not acc_id.isdigit():
+            return
+        accounts = await self.store.get_accounts(ctx.user.id)
+        target = next((a for a in accounts if a.id == int(acc_id)), None)
+        if target is None or len(accounts) < 2:
+            return  # never leave a user with no account
+        await self.store.detach_account(target.id, ctx.user.id)
+        await ctx.reply(t("unlink_done", ctx.lang))
+        await self._settings_status(ctx)
+
+    async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
+        values: dict = {}
+        if field == "times":
+            parts = text.split()
+            parsed = [read_clock(p) for p in parts]
+            if parts and all(p is not None for p in parsed):
+                values = {"remind_mode": "times",
+                          "remind_times": [p.strftime("%H:%M") for p in parsed]}
+            else:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_times", ctx.lang)))
+                return
+        elif field == "interval":
+            if not text.isdigit() or int(text) < 5:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_interval", ctx.lang)))
+                return
+            values = {"remind_mode": "interval", "remind_interval_min": int(text)}
+        elif field == "quiet":
+            parts = text.split()
+            parsed = [read_clock(p) for p in parts]
+            if len(parts) != 2 or any(p is None for p in parsed):
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_quiet", ctx.lang)))
+                return
+            values = {"quiet_start": parsed[0], "quiet_end": parsed[1]}
+        elif field == "ttl":
+            if not text.isdigit() or not 1 <= int(text) <= 168:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_ttl", ctx.lang)))
+                return
+            values = {"location_ttl_hours": int(text)}
+        elif field == "tz":
+            try:
+                ZoneInfo(text.strip())
+            except (KeyError, ValueError):
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_tz", ctx.lang)))
+                return
+            values = {"tz": text.strip()}
+        elif field == "horizon":
+            if not text.isdigit() or not 1 <= int(text) <= 90:
+                await ctx.reply(t("wizard_bad_input", ctx.lang,
+                                  hint=t("rem_ask_horizon", ctx.lang)))
+                return
+            values = {"stats_horizon_days": int(text)}
+        st = await self.store.update_settings(ctx.user.id, **values)
+        ctx.settings = st
+        # value changed → the settings screen updates in place, no new copy
+        await self._settings_status(ctx)

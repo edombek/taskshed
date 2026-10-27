@@ -28,7 +28,7 @@ graph LR
     end
 
     subgraph Core
-        H[bot/app.py BotApp<br/>commands · wizards · task editor · buttons]
+        H[bot/ BotApp<br/>app.py dispatch + per-feature modules<br/>commands · wizards · task editor · buttons]
         C[core/<br/>models · scheduling · stats]
         S[scheduler/jobs.py<br/>minute tick, silence rules]
         ST[stats/charts.py · stats/export.py<br/>PNG · CSV · XLSX]
@@ -168,8 +168,8 @@ erDiagram
 адаптер, который (1) переводит сырые события платформы в платформо-независимый
 `RawEvent` (текст сообщений и нажатия кнопок) и (2) реализует порт `IMessenger`
 (`send_text`, `send_buttons`, `send_image`, `send_document`). Логика чата
-(`bot/app.py::BotApp`) и планировщик (`scheduler/jobs.py`) работают только с
-`RawEvent` / `IMessenger`.
+(`BotApp` — диспетчер в `bot/app.py`, по модулю на диалог в `bot/`) и
+планировщик (`scheduler/jobs.py`) работают только с `RawEvent` / `IMessenger`.
 
 Практическое следствие для тестов: весь бот прогоняется в юнит-тестах против
 `messaging/base.py::FakeMessenger` и in-memory SQLite — без сети и реальных
@@ -184,7 +184,7 @@ erDiagram
 | `taskshed/core/stats.py` | агрегации за период (дни/задачи/места) |
 | `taskshed/storage/` | таблицы SQLAlchemy async + репозитории, миграции Alembic |
 | `taskshed/messaging/` | порт + `FakeMessenger` (`base.py`) + `telegram.py`, `vk.py` |
-| `taskshed/bot/app.py` | `BotApp`: команды чата, диалоги-анкеты, кнопки |
+| `taskshed/bot/` | `BotApp` (`app.py`) + по модулю на диалог: анкета, редактор, карточки, дайджест, отчёты, настройки, локация, места; общее состояние — в `base.py` |
 | `taskshed/scheduler/jobs.py` | ежеминутный тик напоминаний, правила молчания |
 | `taskshed/stats/` | графики matplotlib (дневные и почасовые карты активности), экспорт CSV/XLSX |
 | `taskshed/i18n/` | каталоги ru/en JSON + `t()` |

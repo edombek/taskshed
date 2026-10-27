@@ -2,11 +2,10 @@
 
 ## State of the repo
 
-All plan stages (0–6) implemented and pushed; 56 tests green; ruff clean.
-Everything in the `docs/en/architecture.md` module map now exists (VK adapter
-in `messaging/vk.py`, stats in `core/stats.py` + `stats/`, entrypoints in
-`entrypoints/`). `docs/PLAN.md` is the living checklist; backlog items are
-listed at its bottom.
+Plan stages 0–6 and stage 8 (UX polish) are done; stage 7 (real-world
+verification against live Telegram/VK) is in progress. `docs/PLAN.md` is the
+living checklist; backlog items are listed at its bottom. The full pytest
+suite (~200 tests) is green in seconds; ruff is clean.
 
 ## Commands
 
@@ -21,19 +20,39 @@ ruff check . && pytest             # the CI gate; pytest needs no extra flags
 - Single test: `pytest tests/test_scheduling.py::test_name`.
 - Local Python is 3.14 but CI pins 3.12 — avoid version-specific syntax beyond
   what `requires-python = ">=3.12"` allows.
+- Running the bot for real: `alembic upgrade head`, then
+  `python -m taskshed.entrypoints.run_telegram|run_vk|run_all`
+  (config from `config.yaml` / `.env`).
 
+## Architecture map (don't fight it)
+
+- **All chat/dialog logic lives in `taskshed/bot/`**: `app.py` keeps `BotApp`
+  (event dispatch, text/command routing) assembled from one mixin module per
+  dialog — `wizard.py`, `editor.py`, `cards.py`, `digest.py`, `reports.py`,
+  `settings.py`, `location.py`, `places.py`; the shared transient state
+  (`wizards`, `_pending_inputs`, `_await_loc`, …) lives in `base.py::BotBase`,
+  constants in `consts.py`. Put a new dialog in its own module, not in app.py.
+- Adapters in `messaging/` are thin: they only translate their wire format
+  into `RawEvent` and implement `IMessenger` (`messaging/base.py`).
+  Never put chat logic in an adapter.
+- `bot/timeparse.py` is the single date/time parser for every step (wizard,
+  settings, scheduler prompts); it re-confirms guesses (✅/✖). Reuse it —
+  don't hand-roll date/time parsing.
+- `core/` is pure domain (dataclasses, schedule rules, stats aggregations) —
+  no storage/platform imports. `storage/` = SQLAlchemy 2 async models +
+  repositories; `scheduler/jobs.py` runs the per-minute tick loop;
+  `entrypoints/common.py` wires config → store → adapters → BotApp + scheduler.
 
 ## Project intent
 
 Multi-platform task-reminder chat bot (Telegram + VK) that segments tasks by
-the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
+the user's current location ("home", "work"). Python 3.12+ (`python3`), asyncio.
 
 ## Fixed design decisions (agreed with the owner — don't relitigate)
 
-- Hexagonal architecture: platform-independent `core` (domain, scheduling,
-  stats) behind a messenger port; adapters: Telegram via **Telethon**
-  (`start(bot_token=…)`, MTProto/MTProxy support), VK via Bot Long Poll.
-- Location is set **manually** by the user (buttons), never via GPS.
+- Telegram via **Telethon** (`start(bot_token=…)`, MTProto/MTProxy support),
+  VK via Bot Long Poll (aiohttp, no heavy framework).
+- Location is set **manually** by the user (buttons or typed names), never via GPS.
 - Multi-user from day one. `users` (human, platform-agnostic) and `accounts`
   (platform + chat id, `UNIQUE(platform, platform_user_id)`) are separate
   tables; all task/place/setting rows reference `users.id`.
@@ -44,9 +63,12 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
 - Reminders: per-user settings (`reminders_on`, `times`/`interval` mode, quiet
   hours, `location_ttl_hours`, tz). Hard rule — **stay silent** when there are
   no tasks due today or none match the current place; when the saved location
-  is stale, first ask "where are you?" with place buttons, then digest.
-- Occurrences are materialized (`task_occurrences`: pending/done/missed);
-  overdue rows are flipped to `missed` in a background pass.
+  is stale, first ask "where are you?" with place buttons (modal — an open
+  wizard intent is parked and replayed after the answer), then digest.
+- Occurrences are materialized (`task_occurrences`: `pending` / `in_progress`
+  / `done` / `missed` / `skipped`); overdue rows are flipped to `missed` in a
+  background pass; `skipped` (⏭) carries no missed penalty and is excluded
+  from the completion percent.
 - Stats: text summary, CSV/XLSX documents, and PNG charts via matplotlib
   (Agg backend only, no display); per-user `stats_format`.
 - i18n ru/en: JSON catalogs in `taskshed/i18n/`, all UI strings through `t()`;
@@ -70,8 +92,12 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
   — the parity test only catches drifted copies, content staleness is on us);
   living checklist in `docs/PLAN.md`; `CHANGELOG.md` (Keep a Changelog).
   When code changes, update **both** language copies.
-- Tests: pytest (+pytest-asyncio). Chat-logic tests must go through the
-  `FakeMessenger` fake implementing the messenger port — no network in tests.
+- Tests: pytest (+pytest-asyncio). Chat-logic tests drive `BotApp` through the
+  `FakeMessenger` fake — it ships in `taskshed/messaging/base.py`, don't
+  reinvent it — and hit the DB via in-memory SQLite; no network in tests.
+  Chat-flow tests are split by feature (`test_wizard.py`, `test_editor_flow.py`,
+  …); the shared `env` fixture and `send`/`place_id_of` helpers live in
+  `tests/chatenv.py` (re-exported via `conftest.py`).
   CI (`.github/workflows/ci.yml`): ruff + pytest; never let adapters be
   required for core unit tests.
 - Secrets: `.env`/`config.yaml` are gitignored; commit only `.env.example` /
@@ -91,4 +117,7 @@ the user's current location ("home", "work"). Python 3.14 (`python3`), asyncio.
 - Alembic: autogenerate/upgrade take the URL from `TASKSHED_DATABASE_URL`
   (env), not only `alembic.ini`. `alembic/versions/*` is exempted from ruff
   import-sorting — migrations stay as autogenerated.
+- Chat tests must not lean on wall-clock time: text like `now+2h` typed as
+  `%H.%M` is also a valid date for `timeparse` (`11.08` = 11 August), so such
+  tests only pass at certain minutes — pin the minute (e.g. `.replace(minute=30)`).
 

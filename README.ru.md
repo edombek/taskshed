@@ -137,7 +137,7 @@ graph LR
     end
 
     subgraph Core
-        H[bot/app.py BotApp<br/>commands · wizards · task editor · buttons]
+        H[bot/ BotApp<br/>app.py dispatch + per-feature modules<br/>commands · wizards · task editor · buttons]
         C[core/<br/>models · scheduling · stats]
         S[scheduler/jobs.py<br/>minute tick, silence rules]
         ST[stats/charts.py · stats/export.py<br/>PNG · CSV · XLSX]

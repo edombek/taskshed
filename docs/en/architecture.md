@@ -28,7 +28,7 @@ graph LR
     end
 
     subgraph Core
-        H[bot/app.py BotApp<br/>commands · wizards · task editor · buttons]
+        H[bot/ BotApp<br/>app.py dispatch + per-feature modules<br/>commands · wizards · task editor · buttons]
         C[core/<br/>models · scheduling · stats]
         S[scheduler/jobs.py<br/>minute tick, silence rules]
         ST[stats/charts.py · stats/export.py<br/>PNG · CSV · XLSX]
@@ -168,8 +168,9 @@ knows nothing about Telegram or VK. Each platform is an adapter that
 (1) translates raw platform events into a platform-independent `RawEvent`
 (messages and button presses), and (2) implements the `IMessenger` port
 (`send_text`, `send_buttons`, `send_image`, `send_document`). Chat logic
-(`bot/app.py::BotApp`) and the reminder scheduler (`scheduler/jobs.py`) work
-only with `RawEvent` / `IMessenger`.
+(`BotApp` — dispatch in `bot/app.py`, one dialog per module under `bot/`)
+and the reminder scheduler (`scheduler/jobs.py`) work only with
+`RawEvent` / `IMessenger`.
 
 Consequences that matter for tests: the whole bot can run in unit tests
 against `messaging/base.py::FakeMessenger` and an in-memory SQLite database —
@@ -184,7 +185,7 @@ no network, no real platforms.
 | `taskshed/core/stats.py` | period aggregations (day/task/place) |
 | `taskshed/storage/` | SQLAlchemy async ORM tables + repositories, Alembic migrations |
 | `taskshed/messaging/` | port + `FakeMessenger` (`base.py`) + `telegram.py`, `vk.py` |
-| `taskshed/bot/app.py` | `BotApp`: chat commands, dialogs/wizards, buttons |
+| `taskshed/bot/` | `BotApp` (`app.py`) + one module per dialog: wizard, editor, cards, digest, reports, settings, location, places; shared state in `base.py` |
 | `taskshed/scheduler/jobs.py` | per-minute reminder tick, silence rules |
 | `taskshed/stats/` | matplotlib charts (daily + hourly activity maps), CSV/XLSX export |
 | `taskshed/i18n/` | ru/en JSON catalogs + `t()` |

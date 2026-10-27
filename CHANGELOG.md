@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **`BotApp` split by feature** (pure refactor, no behavior change): the
+  1.8k-line `bot/app.py` now keeps only dispatch; each dialog lives in its
+  own module — `wizard.py`, `editor.py`, `cards.py`, `digest.py`,
+  `reports.py`, `settings.py`, `location.py`, `places.py`, with shared state
+  in `base.py` and constants in `consts.py`. The 1.5k-line `test_handlers.py`
+  split into feature test files over a shared `tests/chatenv.py` fixture.
+- **Test stability**: the bare-time wizard test no longer depends on the
+  wall-clock minute (the typed `HH.MM` could also parse as a date).
+
 ### Added
 - **The hour map pages between weeks**: next to «⏱ График по часам» the stats
   screen now offers «След. неделя ➡️», and the picture itself comes with
