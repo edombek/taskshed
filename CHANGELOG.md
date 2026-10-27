@@ -157,6 +157,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   though the task repeated there. A week the horizon touches is now planned to
   its Sunday, and occurrences are materialized across it.
 
+- **Every statistic is split by place**: the text summary grows a block per
+  place («📍 Дом:» with its tasks under it), and charts, CSV and XLSX are sent
+  one file per place, with the place named in the caption and in the file name.
+  Nothing of «Дом» is averaged into «Работа» any more.
+- **Hour map rows are weekdays of a sliding week**: three days back, today,
+  three ahead, labelled Пн…Вс instead of dates (today stays green). The
+  calendar Mon–Sun grid from the previous change is gone.
+
 ### Changed
 - **The weekly hour map is one week long, always**: seven day rows from Monday
   to Sunday of the current week, instead of whatever the horizon and the oldest

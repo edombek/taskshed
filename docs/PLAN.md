@@ -141,6 +141,8 @@ Checklist of the implementation roadmap. EN summary in
       column) and the hour map outlines the current hour with a minute tick
 - [x] Hour map: week period = exactly Mon–Sun, no legend; both maps name their
       axes
+- [x] Every statistic per place (text block + chart + file each); hour map rows
+      = weekday names of the sliding week (−3 … +3)
 - [x] Modal «Где вы сейчас?»: an open wizard/list intent is parked, the place
       answer (button or typed name) resumes it; «⏭ Не сейчас» skips the question
 

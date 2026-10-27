@@ -452,9 +452,12 @@ class BotApp:
         if not occs:
             await ctx.reply(t("stats_no_data", ctx.lang))
             return
+        # every report is per place: one chart, one file, one text block each
+        groups = await self._by_place(ctx.user.id, occs)
         if fmt in ("csv", "xlsx", "chart", "график", "hours"):
-            await self._stats_file(ctx, occs, name, fmt, start, end)
-            # the file/chart ends the answer: the menu follow-up must follow
+            for place, group in groups:
+                await self._stats_file(ctx, group, name, fmt, start, end, place)
+            # the files/charts end the answer: the menu follow-up must follow
             ctx.replied = True
             return
         rows = [[(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")]]
@@ -467,7 +470,17 @@ class BotApp:
             [(t("btn_back", ctx.lang), "menu:back")],
         ]
         ctx.suppress_menu = True
-        await ctx.reply(self._stats_text(ctx, occs, name), rows)
+        await ctx.reply(self._stats_text(ctx, groups, name), rows)
+
+    async def _by_place(self, user_id: int,
+                        occs: list) -> list[tuple[str, list]]:
+        """Split occurrences into one group per place, in name order."""
+        names = {p.id: p.name for p in await self.store.list_places(user_id)}
+        groups: dict[int, list] = {}
+        for occ, task in occs:
+            groups.setdefault(task.place_id, []).append((occ, task))
+        return [(names.get(pid, "?"), groups[pid])
+                for pid in sorted(groups, key=lambda pid: names.get(pid, "").lower())]
 
     async def _cmd_link(self, ctx: Ctx, arg: str) -> None:
         if not arg:
@@ -516,40 +529,43 @@ class BotApp:
     async def _cmd_settings(self, ctx: Ctx, _: str) -> None:
         await self._settings_status(ctx)
 
-    def _stats_text(self, ctx: Ctx, past, period: str) -> str:
-        agg: dict[int, dict] = {}
-        for occ, task in past:
-            a = agg.setdefault(task.id, {"title": task.title, "done": 0,
-                                         "missed": 0, "skipped": 0, "total": 0})
-            a["total"] += 1
-            if occ.status == "done":
-                a["done"] += 1
-            elif occ.status == "missed":
-                a["missed"] += 1
-            elif occ.status == "skipped":
-                a["skipped"] += 1
+    def _stats_text(self, ctx: Ctx, groups: list[tuple[str, list]],
+                    period: str) -> str:
+        """One block per place: the same numbers, split by location."""
         lines = [t("stats_header", ctx.lang, period=t(f"period_{period}", ctx.lang))]
-        for a in agg.values():
-            base = a["total"] - a["skipped"]
-            pct = round(100 * a["done"] / base) if base else 0
-            lines.append(t("stats_row", ctx.lang, title=a["title"], done=a["done"],
-                           missed=a["missed"], skipped=a["skipped"],
-                           total=a["total"], percent=pct))
+        for place, past in groups:
+            lines.append(t("stats_place_line", ctx.lang, place=place))
+            agg: dict[int, dict] = {}
+            for occ, task in past:
+                a = agg.setdefault(task.id, {"title": task.title, "done": 0,
+                                             "missed": 0, "skipped": 0, "total": 0})
+                a["total"] += 1
+                if occ.status == "done":
+                    a["done"] += 1
+                elif occ.status == "missed":
+                    a["missed"] += 1
+                elif occ.status == "skipped":
+                    a["skipped"] += 1
+            for a in agg.values():
+                base = a["total"] - a["skipped"]
+                pct = round(100 * a["done"] / base) if base else 0
+                lines.append(t("stats_row", ctx.lang, title=a["title"], done=a["done"],
+                               missed=a["missed"], skipped=a["skipped"],
+                               total=a["total"], percent=pct))
         return "\n".join(lines)
 
     def _hour_window(self, period: str, grid: dict, start: datetime,
                      end: datetime, tzinfo: ZoneInfo) -> tuple[date, date]:
         """Day rows of the hour map.
 
-        A week is always exactly that week — Monday to Sunday, seven rows,
-        even when the days at the edges are empty. Longer periods reach back
-        only as far as their data goes and never grow past 24 rows, because
-        beyond that it stops being an hour-level picture.
+        A week is always seven rows, but sliding: three days back, today, three
+        days ahead — the week the user is living in, not the calendar one.
+        Longer periods reach back only as far as their data goes and never grow
+        past 24 rows, because beyond that it stops being an hour-level picture.
         """
         if period == "week":
-            first = datetime.now(tzinfo).date()
-            first -= timedelta(days=first.weekday())
-            return first, first + timedelta(days=6)
+            middle = datetime.now(tzinfo).date()
+            return middle - timedelta(days=3), middle + timedelta(days=3)
         first, last = start.astimezone(tzinfo).date(), end.astimezone(tzinfo).date()
         if grid:
             oldest = min(d for d, _ in grid)
@@ -560,7 +576,12 @@ class BotApp:
         return first, last
 
     async def _stats_file(self, ctx: Ctx, past, period: str, fmt: str,
-                          start: datetime, end: datetime) -> None:
+                          start: datetime, end: datetime, place: str) -> None:
+        """One report of one kind for one place.
+
+        Every place gets its own copy: its own chart, its own spreadsheet, its
+        own file name — nothing of «Дом» is mixed into «Работа».
+        """
         import os
         import shutil
         import tempfile
@@ -568,6 +589,8 @@ class BotApp:
         from taskshed.core import stats as sagg
         from taskshed.stats import charts, export
 
+        slug = re.sub(r"[^\w]+", "-", place, flags=re.UNICODE).strip("-") or "place"
+        where = "\n" + t("stats_place_line", ctx.lang, place=place)
         tmp = tempfile.mkdtemp(prefix="taskshed_stats_")
         try:
             task_rows = sagg.per_task(past)
@@ -575,30 +598,32 @@ class BotApp:
             place_rows = sagg.per_place(past, place_names)
             days = sagg.per_day(past, ctx.settings.tz)
             if fmt == "csv":
-                path = os.path.join(tmp, "stats.csv")
+                path = os.path.join(tmp, f"stats-{slug}.csv")
                 export.write_csv(task_rows, path)
                 await ctx.messenger.send_document(
-                    ctx.account, path, "stats.csv", t("stats_sent_doc", ctx.lang))
+                    ctx.account, path, f"stats-{slug}.csv",
+                    t("stats_sent_doc", ctx.lang) + where)
             elif fmt == "xlsx":
-                path = os.path.join(tmp, "stats.xlsx")
+                path = os.path.join(tmp, f"stats-{slug}.xlsx")
                 export.write_xlsx(task_rows, place_rows, path)
                 await ctx.messenger.send_document(
-                    ctx.account, path, "stats.xlsx", t("stats_sent_doc", ctx.lang))
+                    ctx.account, path, f"stats-{slug}.xlsx",
+                    t("stats_sent_doc", ctx.lang) + where)
             elif fmt == "hours":
                 # day rows × hour columns: what a short period really looked like
                 grid = sagg.activity_by_hour(past, ctx.settings.tz)
                 tzinfo = ZoneInfo(ctx.settings.tz)
                 first, last = self._hour_window(period, grid, start, end, tzinfo)
-                path = os.path.join(tmp, "hours.png")
+                path = os.path.join(tmp, f"hours-{slug}.png")
                 if not charts.hourly_heatmap(
                         grid, ctx.lang, path, (first, last),
                         datetime.now(tzinfo).date(), datetime.now(tzinfo)):
                     await ctx.reply(t("stats_no_data", ctx.lang))
                     return
                 await ctx.messenger.send_image(
-                    ctx.account, path, t("stats_hours_caption", ctx.lang))
+                    ctx.account, path, t("stats_hours_caption", ctx.lang) + where)
             else:  # chart: GitHub-style activity map (daily bars retired)
-                heat = os.path.join(tmp, "activity.png")
+                heat = os.path.join(tmp, f"activity-{slug}.png")
                 tzinfo = ZoneInfo(ctx.settings.tz)
                 # the window reaches into the future, so the days ahead are
                 # drawn even before anything is planned in them
@@ -609,7 +634,7 @@ class BotApp:
                     await ctx.reply(t("stats_no_data", ctx.lang))
                     return
                 await ctx.messenger.send_image(
-                    ctx.account, heat, t("stats_heat_caption", ctx.lang))
+                    ctx.account, heat, t("stats_heat_caption", ctx.lang) + where)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

@@ -65,7 +65,6 @@
   "period_year": "year",
   "period_all": "all time",
   "stats_sent_doc": "Statistics file.",
-  "stats_by_place": "By place:",
   "link_code_msg": "To connect this account, write to the bot on the other platform:\n/link {code}\nThe code is valid for 10 minutes.",
   "link_ok": "Accounts linked! Reminders go to both chats.",
   "link_bad_code": "Code not found or expired. Request a new one (/link).",
@@ -191,5 +190,10 @@
   "ax_hours": "hours",
   "ax_days": "days",
   "ax_weeks": "weeks",
-  "ax_weekdays": "weekdays"
+  "ax_weekdays": "weekdays",
+  "hm_tue": "Tue",
+  "hm_thu": "Thu",
+  "hm_sat": "Sat",
+  "hm_sun": "Sun",
+  "stats_place_line": "📍 {place}:"
 }

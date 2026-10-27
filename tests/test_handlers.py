@@ -407,6 +407,31 @@ class TestStatsCommands:
         images = [m.image for m in f.sent if m.image]
         assert len(images) == 1 and images[0].endswith(".png")
 
+    async def test_every_report_comes_once_per_place(self, env):
+        # one place = one text block, one chart, one file: «Дом» and «Работа»
+        # are never mixed into a single picture or table
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await store.add_place(user.id, "Работа")
+        work = await place_id_of(store, user.id, "Работа")
+        today = datetime.now(UTC).date()
+        for pid, title in ((home, "Уборка"), (work, "Отчёт")):
+            task = await store.create_task(
+                user.id, pid, title, ScheduleType.EVERY_N_DAYS,
+                {"n": 1, "anchor": today.isoformat()}, time(9, 0))
+            await store.materialize_occurrences(task, today, 0, "UTC")
+        f = await send(env, "/статистика неделя")
+        text = f.texts()[0]
+        assert "📍 Дом" in text and "📍 Работа" in text
+        assert "Уборка" in text and "Отчёт" in text
+        f = await send(env, "/статистика неделя график")
+        assert len([m for m in f.sent if m.image]) == 2
+        f = await send(env, "/статистика неделя csv")
+        assert len([m for m in f.sent if m.document]) == 2
+
+
 class TestFanout:
     async def test_all_vs_primary(self, env):
         app, store, fake = env
@@ -1429,18 +1454,19 @@ class TestChartHorizonAndHours:
         await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
         assert any(m.image for m in fake.sent)
 
-    async def test_week_hour_map_is_always_one_week(self, env):
-        # seven day rows, Monday to Sunday, whatever the horizon or the data
+    async def test_week_hour_map_is_always_seven_sliding_days(self, env):
+        # seven rows whatever the horizon or the data: three days back, today,
+        # three days ahead — the sliding week, not the calendar one
         app, _, _ = env
         tz = ZoneInfo("UTC")
         today = datetime.now(UTC).date()
-        monday = today - timedelta(days=today.weekday())
         for back, ahead in ((30, 8), (7, 7), (0, 1)):
             first, last = app._hour_window(
                 "week", {(today, 9): {"done": 1}},
                 datetime.now(UTC) - timedelta(days=back),
                 datetime.now(UTC) + timedelta(days=ahead), tz)
-            assert (first, last) == (monday, monday + timedelta(days=6))
+            assert (first, last) == (today - timedelta(days=3),
+                                     today + timedelta(days=3))
         # longer periods still trim to their data and stay under 24 rows
         first, last = app._hour_window(
             "month", {(today, 9): {"done": 1}},

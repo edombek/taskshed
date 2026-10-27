@@ -33,6 +33,8 @@ PIXEL_BUDGET = 2_400_000
 CELL_IN = 0.20
 # the legend needs horizontal room; narrow maps rely on the caption instead
 LEGEND_MIN_W = 3.0
+# weekday row labels, Monday first (the hour map names every row this way)
+HM_WD = ["hm_mon", "hm_tue", "hm_wed", "hm_thu", "hm_fri", "hm_sat", "hm_sun"]
 
 
 def _dpi_for(width_in: float, height_in: float) -> int:
@@ -105,7 +107,7 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
 
     # one unit per row/column on both axes (labels live inside the limits), so
     # cells are square and the picture grows with the number of squares
-    x_lo, x_hi = -3.0, 24.0
+    x_lo, x_hi = -2.1, 24.0
     y_hi, y_lo = n_days + 1.2, -0.6  # y_hi is the bottom edge: axis is inverted
     figsize = _grid_figsize(x_hi - x_lo, y_hi - y_lo)
     fig, ax = plt.subplots(figsize=figsize)
@@ -138,10 +140,10 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
         ax.plot([hour + now.minute / 60] * 2, [row - 0.12, row + 0.98],
                 color=HEAT_TEXT, linewidth=0.8, zorder=5)
 
-    # day labels on the left (today in green), hour labels every third hour
+    # day labels name the weekday (today in green), hours every third column
     for row, d in enumerate(days):
-        ax.text(-0.35, row + 0.43, d.strftime("%d.%m"), fontsize=6.5, ha="right",
-                va="center",
+        ax.text(-0.35, row + 0.43, t(HM_WD[d.weekday()], lang), fontsize=6.5,
+                ha="right", va="center",
                 color=HEAT_GREENS[3] if d == today else HEAT_TEXT)
     for hour in range(0, 24, 3):
         ax.text(hour + 0.43, n_days + 0.3, f"{hour:02d}", fontsize=6.5,
@@ -149,7 +151,7 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
     # what the axes mean — the colors themselves are explained in the caption
     ax.text(12, n_days + 0.95, t("ax_hours", lang), fontsize=6.5,
             ha="center", va="center", color=HEAT_TEXT)
-    ax.text(-2.7, n_days / 2, t("ax_days", lang), fontsize=6.5, rotation=90,
+    ax.text(-1.6, n_days / 2, t("ax_days", lang), fontsize=6.5, rotation=90,
             ha="center", va="center", color=HEAT_TEXT)
 
     ax.set_xlim(x_lo, x_hi)
@@ -288,8 +290,8 @@ def github_heatmap(days: dict[date, dict], lang: str, out_path: str,
             ax.text(wi + 0.1, -0.75, t(f"hm_m{monday.month}", lang), fontsize=7,
                     ha="left", va="center", color=HEAT_TEXT)
     # weekday labels centered on their rows (cells span row..row+0.86)
-    for row, key in ((0, "hm_mon"), (2, "hm_wed"), (4, "hm_fri")):
-        ax.text(-0.25, row + 0.43, t(key, lang), fontsize=7, ha="right",
+    for row in (0, 2, 4):
+        ax.text(-0.25, row + 0.43, t(HM_WD[row], lang), fontsize=7, ha="right",
                 va="center", color=HEAT_TEXT)
     # what the axes are: columns are whole weeks, rows are weekdays
     ax.text(n_weeks / 2, 7.4, t("ax_weeks", lang), fontsize=7, ha="center",

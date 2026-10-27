@@ -37,15 +37,15 @@ platform-independent core.
   the bot says nothing. Stale location → it just asks "Where are you now?", and
   that question is modal: a dialog you were in the middle of (task wizard,
   report) waits behind it and is replayed afterwards — or you tap ⏭ Not now.
-- **Statistics**: text summary, CSV/XLSX export, PNG charts — a GitHub-style
-  activity heatmap (missed / planned / skipped markers, drawn forward to the
-  horizon from your settings — a week by default, always in whole weeks — and
-  back only as far as real tasks go) plus an **hour-level map for short
-  periods** that marks missed and still-planned work and outlines the hour you
-  are standing in — a weekly hour map always covers one week, Monday to Sunday
-  — plus top tasks/places and the completion trend, for any period or the whole
-  history. Both maps name their axes; the caption under each picture explains
-  the colors, so the hour map skips the legend.
+- **Statistics**: text summary, CSV/XLSX export, PNG charts — **everything
+  split by place**, one copy of every report per place. A GitHub-style activity
+  heatmap (missed / planned / skipped markers, drawn forward to the horizon
+  from your settings — a week by default, always in whole weeks — and back only
+  as far as real tasks go) plus an **hour-level map for short periods** that
+  marks missed and still-planned work and outlines the hour you are standing
+  in; its rows are the weekdays of the sliding week — three days back, today,
+  three ahead. Both maps name their axes, and the caption under each picture
+  explains the colors.
 - **Multi-account**: link your Telegram and VK identities with a one-time
   code (`/link`); data and reminders are shared.
 - Chat interfaces in **Russian and English** (`/lang`).
