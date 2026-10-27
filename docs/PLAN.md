@@ -58,11 +58,11 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Offline smoke of the whole chat flow (places → task → ✅ → stats CSV +
       silence rule): `scripts/smoke_chat.py`, runs on the production code
       path with `FakeMessenger`, no network
-- [ ] Telegram smoke: bot connects through the proxy — **blocked 2026-10-27**:
-      MTProxy on 127.0.0.1:8888 takes the TCP + obfuscated2 handshake but
-      never answers `req_pq` (upstream dead); direct DC:443 is blocked, so a
-      working proxy is required
+- [x] Telegram smoke: bot connects through the proxy — 2026-10-27 via local
+      `tg-ws-proxy` on 127.0.0.1:8586 (mtproxy transport; the old 8888 daemon
+      accepted handshakes but never forwarded). `start(bot_token=…)`, Telethon 1.45
 - [ ] Telegram chat flow: places → tasks → digest → ✅ → stats (interactive)
+      — in progress: bot is online, walking the flow in chat now
 - [ ] VK: real community token + `group_id` (placeholders removed), enable
       (`getLongPollServer` probe answers error 15 with `group_id=0`)
 - [ ] VK smoke: long poll connects, `/старт` replies
