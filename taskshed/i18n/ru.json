@@ -186,5 +186,6 @@
   "when_no": "✖ Нет, другое",
   "btn_until_none": "✖ Без срока — просто напомнить",
   "save_when_moment": "🕐 {when}",
-  "save_when_soon": "🕐 Скоро"
+  "save_when_soon": "🕐 Скоро",
+  "btn_loc_later": "⏭ Не сейчас"
 }

@@ -138,6 +138,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   no band from the start up to midnight (`stats.occurrence_hours` now takes the
   task into account, not just the occurrence).
 
+- **«Где вы сейчас?» no longer hijacks the conversation**: when the location is
+  stale the scheduler used to drop its question into the middle of an open
+  dialog, and the answer went to whichever context grabbed the text first — a
+  place name typed for the task wizard became a location change, or vice versa.
+  The question is modal now: the open dialog (wizard step, or the intent to
+  show a task list) is parked, the answer — button *or* typed place name — sets
+  the location, and the dialog is replayed exactly where it stopped. A new
+  **⏭ Не сейчас** button returns to the dialog without choosing a place, and
+  ⬅️ Назад cancels the question but keeps the dialog.
+
 ### Fixed
 - **The main menu comes back after every action**: the task-editor card and the
   places screen used to leave a dialog open in memory, so the *next* answer

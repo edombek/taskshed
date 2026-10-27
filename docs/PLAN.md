@@ -137,6 +137,8 @@ Checklist of the implementation roadmap. EN summary in
       (reminder only), drawn as one hour on the hour map, not a band
 - [x] Chart window = max(user horizon, period length) ahead, with occurrences
       materialized across the whole window (repeats draw on every planned day)
+- [x] Modal «Где вы сейчас?»: an open wizard/list intent is parked, the place
+      answer (button or typed name) resumes it; «⏭ Не сейчас» skips the question
 
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).

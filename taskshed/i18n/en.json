@@ -186,5 +186,6 @@
   "when_no": "✖ No, something else",
   "btn_until_none": "✖ No deadline — just remind me",
   "save_when_moment": "🕐 {when}",
-  "save_when_soon": "🕐 Soon"
+  "save_when_soon": "🕐 Soon",
+  "btn_loc_later": "⏭ Not now"
 }

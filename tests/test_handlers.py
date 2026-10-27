@@ -330,8 +330,56 @@ class TestWhereAndTasks:
         f = await send(env, "/задачи")
         assert f.last_buttons()[0][0][1] == f"place:{pid_home}"
         f = await send(env, cb=f"place:{pid_home}")
-        # tasks list followed the location answer
-        assert "нет" in f.texts()[0].lower() or "Задачи" in f.texts()[0]
+        # the tasks list followed the location answer (the menu follow-up after)
+        joined = " | ".join(f.texts())
+        assert "нет" in joined.lower() or "Задачи" in joined
+
+
+class TestLocationQuestionIsModal:
+    """«Где вы сейчас?» waits: the interrupted dialog is replayed after it."""
+
+    async def _wizard_awaiting_place(self, env):
+        app, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, "/задача")
+        await send(env, "Полка")           # the wizard sits on its place step
+        app.park_for_location(user.id)     # exactly what the scheduler does
+        return app, store, user, home
+
+    async def test_tapping_a_place_resumes_the_wizard(self, env):
+        app, store, user, home = await self._wizard_awaiting_place(env)
+        f = await send(env, cb=f"place:{home}")
+        assert "Текущее место" in f.texts()[0]
+        assert app.wizards[user.id]["step"] == "place", "the dialog came back"
+        await send(env, cb=f"place:{home}")   # this one belongs to the wizard
+        f = await send(env, cb="sched:every_n_days")
+        assert "сколько дней" in f.texts()[0]
+
+    async def test_typing_a_place_name_answers_it(self, env):
+        app, store, user, home = await self._wizard_awaiting_place(env)
+        f = await send(env, "дом")           # any case
+        assert "Текущее место" in f.texts()[0]
+        assert (await store.get_location(user.id))[0].name == "Дом"
+        assert app.wizards[user.id]["step"] == "place"
+
+    async def test_nonsense_does_not_leak_into_the_wizard(self, env):
+        app, store, user, home = await self._wizard_awaiting_place(env)
+        f = await send(env, "ну-ка")
+        assert "Где вы сейчас?" in f.texts()[0]      # asked again, not eaten
+        assert await store.get_location(user.id) is None
+        # the dialog is still parked, untouched, behind the question
+        assert app._await_loc[user.id]["wizard"]["step"] == "place"
+
+    async def test_not_now_goes_straight_back_to_the_dialog(self, env):
+        app, store, user, home = await self._wizard_awaiting_place(env)
+        f = await send(env, cb="loc:later")
+        assert "местности" in f.texts()[0]           # the wizard's own question
+        assert await store.get_location(user.id) is None
+        await send(env, cb=f"place:{home}")
+        f = await send(env, cb="sched:every_n_days")
+        assert "сколько дней" in f.texts()[0]
 
 
 class TestStatsCommands:

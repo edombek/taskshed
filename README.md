@@ -34,7 +34,9 @@ platform-independent core.
 - Only the newest screen stays clickable: keyboards of older messages are
   stripped automatically.
 - **No noise**: if you have no tasks today, or none match your current place,
-  the bot says nothing. Stale location → it just asks "Where are you now?".
+  the bot says nothing. Stale location → it just asks "Where are you now?", and
+  that question is modal: a dialog you were in the middle of (task wizard,
+  report) waits behind it and is replayed afterwards — or you tap ⏭ Not now.
 - **Statistics**: text summary, CSV/XLSX export, PNG charts — a GitHub-style
   activity heatmap (missed / planned / skipped markers, always drawn up to the
   horizon ahead — default one week, and never shorter than the period being

@@ -125,6 +125,9 @@ class BotApp:
         self._kb_msgs: dict[tuple[int, int], dict[str, str]] = {}
         # last tab of the task editor per user: where ⬅️ Назад goes back to
         self._edit_tab: dict[int, str] = {}
+        # a "where are you?" that interrupted something else: the interrupted
+        # dialog lives here and is replayed once the place is known
+        self._await_loc: dict[int, dict] = {}
 
     def _track_kb(self, user_id: int, account: Account, mid: str | None,
                   text: str) -> None:
@@ -221,6 +224,18 @@ class BotApp:
                 return
             await ctx.reply(t("unknown_cmd", ctx.lang))
             return
+        if ctx.user.id in self._await_loc:
+            # the place question owns the answer now: a typed place name is it,
+            # anything else just asks the question again
+            place = await self._find_place_by_name(ctx.user.id, _defang(text.strip()))
+            if place:
+                await self._location_chosen(ctx, place)
+            else:
+                await ctx.place_buttons(
+                    "where_question",
+                    [[(t("btn_loc_later", ctx.lang), "loc:later")]]
+                    + self._back_only(ctx))
+            return
         if wizard:
             await self._wizard_input(ctx, wizard, text)
             return
@@ -259,18 +274,76 @@ class BotApp:
     def _back_only(self, ctx: Ctx) -> ButtonRows:
         return [[(t("btn_back", ctx.lang), "menu:back")]]
 
+    def _park_context(self, user_id: int) -> dict:
+        """Move an open dialog aside while a place question is being asked."""
+        parked: dict = {}
+        wizard = self.wizards.pop(user_id, None)
+        if wizard:
+            parked["wizard"] = wizard
+        pending = self._pending_inputs.pop(user_id, None)
+        if pending:
+            parked["pending"] = pending
+        return parked
+
+    def park_for_location(self, user_id: int) -> None:
+        """The scheduler is about to ask "where are you?": pause the dialog."""
+        self._await_loc[user_id] = self._park_context(user_id)
+
+    async def _ask_location(self, ctx: Ctx, resume: dict | None = None) -> None:
+        """A modal «Где вы сейчас?»: the dialog in progress waits, then resumes."""
+        self._await_loc[ctx.user.id] = (
+            self._park_context(ctx.user.id) if resume is None else resume)
+        ctx.suppress_menu = True  # question + ⏭ Позже + ⬅️ Назад is the reply
+        rows = [[(t("btn_loc_later", ctx.lang), "loc:later")]] + self._back_only(ctx)
+        await ctx.place_buttons("where_question", rows)
+
+    async def _location_chosen(self, ctx: Ctx, place) -> None:
+        """The place that answers a parked question: set it, resume, digest."""
+        parked = self._await_loc.pop(ctx.user.id, None) or {}
+        await self.store.set_location(ctx.user.id, place.id)
+        was_pending = ctx.settings.pending_reminder
+        await self.store.update_settings(ctx.user.id, pending_reminder=False)
+        await ctx.reply(t("where_set", ctx.lang, name=place.name))
+        await self._replay(ctx, parked)
+        if was_pending:
+            # the digest comes last: its buttons are the ones to tap now, while
+            # the resumed dialog carries on as typed input
+            await self._digest_now(ctx.user.id, ctx.account)
+
+    async def _replay(self, ctx: Ctx, parked: dict) -> None:
+        """Put the interrupted dialog back and ask its question once more."""
+        uid = ctx.user.id
+        wizard = parked.get("wizard")
+        if wizard:
+            self.wizards[uid] = wizard
+            if wizard.get("kind") == "task":
+                await self._ask_step(ctx, wizard)
+            elif wizard.get("kind") == "addplace":
+                await self._cmd_places(ctx, "")
+            return
+        pending = parked.get("pending")
+        if pending == "tasks":
+            await self._cmd_tasks(ctx, "")
+        elif pending:
+            self._pending_inputs[uid] = pending
+
+    async def _location_later(self, ctx: Ctx) -> None:
+        """⏭ «Позже»: back to what was being typed, still without a place."""
+        parked = self._await_loc.pop(ctx.user.id, None)
+        if not parked:
+            return
+        ctx.suppress_menu = True
+        await self._replay(ctx, parked)
+
     async def _cmd_where(self, ctx: Ctx, _: str) -> None:
-        self._pending_inputs[ctx.user.id] = "where"
-        ctx.suppress_menu = True  # question + ⬅️ Назад is the whole reply
-        await ctx.place_buttons("where_question", self._back_only(ctx))
+        await self._ask_location(ctx)
 
     async def _cmd_tasks(self, ctx: Ctx, _: str) -> None:
         await self.ensure_materialized(ctx)
         loc = await self.store.get_location(ctx.user.id)
         if loc is None:
-            self._pending_inputs[ctx.user.id] = "tasks"
-            ctx.suppress_menu = True
-            await ctx.place_buttons("where_question", self._back_only(ctx))
+            # the list is what we came for: it is replayed once the place is in
+            await self._ask_location(ctx, resume={"pending": "tasks"})
             return
         place, _ = loc
         await self._send_task_list(ctx, place)
@@ -1107,6 +1180,8 @@ class BotApp:
                 await handler(ctx, "")
         elif action == "place":
             await self._cb_place(ctx, int(arg))
+        elif action == "loc" and arg == "later":
+            await self._location_later(ctx)
         elif action == "sched":
             await self._cb_sched(ctx, arg)
         elif action == "wd":
@@ -1202,6 +1277,13 @@ class BotApp:
             self._pending_inputs.pop(ctx.user.id, None)  # drop awaited inputs
             if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
                 self.wizards.pop(ctx.user.id, None)
+            parked = self._await_loc.pop(ctx.user.id, None)
+            if parked:
+                # ⬅️ from a place question: drop the question, keep the dialog
+                if "wizard" in parked:
+                    self.wizards[ctx.user.id] = parked["wizard"]
+                if "pending" in parked:
+                    self._pending_inputs[ctx.user.id] = parked["pending"]
             ctx.suppress_menu = True
             await ctx.reply(t("menu_ask_more", ctx.lang),
                             self._menu_rows(ctx.lang))
@@ -1269,6 +1351,11 @@ class BotApp:
     async def _cb_place(self, ctx: Ctx, place_id: int) -> None:
         place = await self.store.get_place(ctx.user.id, place_id)
         if place is None:
+            return
+        if ctx.user.id in self._await_loc:
+            # this tap answers the parked place question, not the dialog that
+            # was interrupted by it
+            await self._location_chosen(ctx, place)
             return
         w = self.wizards.get(ctx.user.id)
         if w and w.get("kind") == "task" and w.get("step") == "place":

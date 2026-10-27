@@ -17,11 +17,12 @@ sequenceDiagram
         end
         Core->>Core: current_location fresh? (set_at + ttl > now)
         alt stale or unset
-            Core->>Msg: "Where are you now?" + place buttons<br/>(once: pending_reminder=true, last_reminded_at=now)
-            Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] …
-            U->>Msg: tap "place:42" button
+            Core->>Msg: "Where are you now?" + place buttons<br/>+ «Not now» (once: pending_reminder=true, last_reminded_at=now)
+            Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] … [⏭ Не сейчас]
+            Core->>Core: whatever dialog is in progress (wizard, list intent)<br/>is parked — the question is modal
+            U->>Msg: tap "place:42" (or type a place name)
             Msg->>Core: set location, pending_reminder=false
-            Core->>Msg: digest follows immediately
+            Core->>Msg: the parked dialog is replayed, then the digest follows
         else fresh
             Core->>Core: digest = today's occurrences at that place
             alt empty
