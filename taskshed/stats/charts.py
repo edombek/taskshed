@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 import matplotlib
 
@@ -79,13 +79,16 @@ def daily_bar(days: dict[date, dict], lang: str, out_path: str) -> str:
 
 def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
                    day_range: tuple[date, date] | None = None,
-                   today: date | None = None) -> str:
+                   today: date | None = None,
+                   now: datetime | None = None) -> str:
     """Day rows × 24 hour columns — the short-period view of the same data.
 
     Same visual language as the daily map: the base square is the number of
     tasks finished in that hour, and inside it a red inset marks missed ones,
     an orange one skipped, a blue one still planned. `day_range` draws every
-    day of the period, including the empty days ahead.
+    day of the period, including the empty days ahead. `now` outlines the hour
+    the user is standing in and ticks the exact minute — the past/future line
+    of an hour-level picture.
     """
     from datetime import timedelta
 
@@ -125,6 +128,16 @@ def hourly_heatmap(grid: dict[tuple[date, int], dict], lang: str, out_path: str,
             if int(agg.get("skipped", 0)):
                 ax.add_patch(Rectangle((hour, row + 0.5), 0.36, 0.36,
                                        facecolor=HEAT_SKIPPED, edgecolor="none"))
+
+    # the hour the user is standing in: outlined, with a tick at the exact
+    # minute — everything left of it already happened
+    row_of = {d: i for i, d in enumerate(days)}
+    if now is not None and now.date() in row_of:
+        row, hour = row_of[now.date()], now.hour
+        ax.add_patch(Rectangle((hour, row), 0.86, 0.86, facecolor="none",
+                               edgecolor=HEAT_TEXT, linewidth=1.1))
+        ax.plot([hour + now.minute / 60] * 2, [row - 0.12, row + 0.98],
+                color=HEAT_TEXT, linewidth=0.8, zorder=5)
 
     # day labels on the left (today in green), hour labels every third hour
     for row, d in enumerate(days):

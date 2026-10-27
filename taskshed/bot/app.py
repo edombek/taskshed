@@ -434,9 +434,18 @@ class BotApp:
         # the map only ever reaches as far as real occurrences exist, and a
         # schedule is never planned before the date written inside it
         ahead = max(1, ctx.settings.stats_horizon_days) if chart else 1
-        end = now + timedelta(days=ahead)
         if chart:
-            await self.ensure_materialized(ctx, ahead, days or 365)
+            # whole weeks: a week the horizon touches is drawn to its Sunday,
+            # otherwise the planned squares at its right edge are cut off even
+            # though the cells themselves are drawn
+            today_local = now.astimezone(ctx.tz).date()
+            horizon = today_local + timedelta(days=ahead)
+            horizon += timedelta(days=6 - horizon.weekday())
+            end = datetime.combine(horizon, time(23, 59), tzinfo=ctx.tz)
+            await self.ensure_materialized(ctx, (horizon - today_local).days,
+                                           days or 365)
+        else:
+            end = now + timedelta(days=ahead)
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
         # planned (future) occurrences are kept on purpose: they show as
         # pending/«в плане» in reports and as blue insets on the heatmap
@@ -568,7 +577,7 @@ class BotApp:
                 path = os.path.join(tmp, "hours.png")
                 if not charts.hourly_heatmap(
                         grid, ctx.lang, path, (first, last),
-                        datetime.now(tzinfo).date()):
+                        datetime.now(tzinfo).date(), datetime.now(tzinfo)):
                     await ctx.reply(t("stats_no_data", ctx.lang))
                     return
                 await ctx.messenger.send_image(

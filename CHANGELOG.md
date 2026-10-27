@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The hour map marks the present moment**: the hour the user is standing in
+  is outlined on today's row and ticked at the exact minute, so a short-period
+  chart shows where the finished part stops and the plan begins.
 - (Stage 0) Repository bootstrap: bilingual README, docs skeleton, Mermaid
   diagrams, CI workflow (ruff + pytest), example config and env files.
 - (Stage 1) Core domain (schedule rules, occurrence materialization, overdue
@@ -147,6 +150,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the location, and the dialog is replayed exactly where it stopped. A new
   **⏭ Не сейчас** button returns to the dialog without choosing a place, and
   ⬅️ Назад cancels the question but keeps the dialog.
+
+- **Planned squares were cut off at the right edge of the map**: the horizon was
+  a bare number of days, so the grid drew the whole current week while only
+  seven days ahead were planned — the second week showed empty cells even
+  though the task repeated there. A week the horizon touches is now planned to
+  its Sunday, and occurrences are materialized across it.
 
 ### Fixed
 - **The main menu comes back after every action**: the task-editor card and the

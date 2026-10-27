@@ -39,10 +39,11 @@ platform-independent core.
   report) waits behind it and is replayed afterwards — or you tap ⏭ Not now.
 - **Statistics**: text summary, CSV/XLSX export, PNG charts — a GitHub-style
   activity heatmap (missed / planned / skipped markers, drawn forward to the
-  horizon from your settings — a week by default — and back only as far as real
-  tasks go) plus an **hour-level map for short periods**
-  that marks missed and still-planned work too, top tasks/places, completion
-  trend — for any period or the whole history.
+  horizon from your settings — a week by default, always in whole weeks — and
+  back only as far as real tasks go) plus an **hour-level map for short
+  periods** that marks missed and still-planned work, outlines the hour you are
+  standing in, shows top tasks/places and the completion trend — for any period
+  or the whole history.
 - **Multi-account**: link your Telegram and VK identities with a one-time
   code (`/link`); data and reminders are shared.
 - Chat interfaces in **Russian and English** (`/lang`).

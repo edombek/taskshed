@@ -209,6 +209,19 @@ class TestCharts:
         assert os.path.getsize(out) > 500
         assert charts.hourly_heatmap({}, "ru", out) == ""
 
+    def test_hourly_heatmap_marks_the_current_hour(self, tmp_path):
+        # the hour the user is in gets a frame and a minute tick: the picture
+        # has to show where "now" sits between the past and the plan
+        grid = {(date(2026, 10, 27), 9): {"done": 1},
+                (date(2026, 10, 27), 14): {"pending": 2},
+                (date(2026, 10, 28), 11): {"pending": 1}}
+        out = str(tmp_path / "now.png")
+        now = datetime(2026, 10, 27, 13, 30)
+        assert charts.hourly_heatmap(
+            grid, "ru", out, (date(2026, 10, 26), date(2026, 10, 29)),
+            now.date(), now) == out
+        assert os.path.getsize(out) > 500
+
     def test_activity_by_hour(self):
         from taskshed.core.stats import activity_by_hour
 

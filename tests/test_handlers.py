@@ -1428,6 +1428,24 @@ class TestChartHorizonAndHours:
         await app.handle(RawEvent("telegram", PID, text="/статистика месяц график"))
         assert any(m.image for m in fake.sent)
 
+    async def test_planned_week_is_planned_whole(self, env):
+        # a week the horizon touches is filled to its Sunday: no planned square
+        # may be missing at the right edge while its cell is drawn
+        _, store, _ = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        pid = await place_id_of(store, user.id, "Дом")
+        today = datetime.now(UTC).date()
+        await store.create_task(user.id, pid, "Прогулка", ScheduleType.EVERY_N_DAYS,
+                                {"n": 1, "anchor": today.isoformat()}, time(9, 0))
+        await send(env, "/статистика неделя график")
+        horizon = today + timedelta(days=7)          # default horizon setting
+        sunday = horizon + timedelta(days=6 - horizon.weekday())
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC) - timedelta(days=1),
+            datetime.combine(sunday + timedelta(days=1), time(0, 0), UTC))
+        assert sunday in {occ.due_at.date() for occ, _ in occs}
+
     async def test_repeat_at_the_horizon_lights_every_planned_day(self, env):
         # the whole horizon window is materialized before it is drawn, so a
         # repeat shows on every one of its days inside it
