@@ -23,6 +23,9 @@ platform-independent core.
 - **One ⚙️ settings screen** per user: reminders (fixed times or interval
   mode), quiet hours, time zone, how long your chosen location stays valid,
   how far ahead charts are drawn, language and the **platform linking status** (Telegram/VK).
+- **One way to say a time**: `13.00`, `13`, `завтра 9`, `15.11 14.30` parse the
+  same way in every question, the bot repeats what it understood («Понял так:
+  27.10.2026 13:00. Верно?») before saving, and the start step offers **▶ Сейчас**.
 - **Task editor** (`/edit`): change the title, place, repeat rule, work window
   or reminder of any task, or delete it — upcoming, recurring and past tasks
   are one tab away. Editing a schedule rebuilds the open repeats and keeps the

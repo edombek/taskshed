@@ -1,7 +1,7 @@
 """Chat logic end-to-end through BotApp + FakeMessenger (no network)."""
 
 import re
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 
@@ -45,6 +45,98 @@ async def place_id_of(store, pid_user, name):
 def prev_buttons(f) -> list:
     """Buttons of the command's own reply (the menu follow-up is the last)."""
     return f.sent[-2].buttons or []
+
+
+class TestTimeInput:
+    """One parser for typed moments, plus a "did I read that right?" card."""
+
+    async def _to_until_step(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Полка")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{home}")
+        await send(env, cb="sched:once")
+        await send(env, cb="dt:1")     # tomorrow, by button
+        f = await send(env, "10.00")   # dot instead of a colon
+        assert "понял так" in f.texts()[0] and "10:00" in f.texts()[0]
+        await send(env, cb="cfm:yes")
+        return user
+
+    async def _finish(self, env):
+        await send(env, "09:00")       # an exact time: no guessing, no card
+        _, store, _ = env
+        user = await store.get_user_by_account("telegram", PID)
+        return (await store.list_tasks(user.id))[0]
+
+    async def test_bare_deadline_time_is_read_back_and_confirmed(self, env):
+        # «До какого времени» used to read a bare "13.00" as a date, said
+        # "не понял" and left the user typing the same thing again
+        await self._to_until_step(env)
+        f = await send(env, "13.00")
+        assert "понял так" in f.texts()[0] and "13:00" in f.texts()[0]
+        cbs = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cfm:yes" in cbs and "cfm:no" in cbs
+        await send(env, cb="cfm:yes")
+        task = await self._finish(env)
+        assert task.deadline - task.start_at == timedelta(hours=3)
+
+    async def test_denied_reading_is_asked_again(self, env):
+        await self._to_until_step(env)
+        await send(env, "13.00")
+        f = await send(env, cb="cfm:no")
+        assert "закончить" in f.texts()[0]      # the same question returns
+        f = await send(env, "15")               # a whole hour this time
+        assert "понял так" in f.texts()[0] and "15:00" in f.texts()[0]
+        await send(env, cb="cfm:yes")
+        task = await self._finish(env)
+        assert task.deadline - task.start_at == timedelta(hours=5)
+
+    async def test_deadline_before_the_start_is_refused_at_once(self, env):
+        await self._to_until_step(env)
+        f = await send(env, "09.00")            # earlier than the 10:00 start
+        assert "понял так" not in f.texts()[0]  # no point confirming nonsense
+        assert "позже начала" in f.texts()[0]
+
+    async def test_bare_time_at_the_start_step_picks_the_next_moment(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Позвонить")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{home}")
+        await send(env, cb="sched:once")
+        soon = (datetime.now(UTC) + timedelta(hours=2)).time()
+        f = await send(env, soon.strftime("%H.%M"))   # not a date typed
+        assert "понял так" in f.texts()[0]
+        await send(env, cb="cfm:yes")
+        await send(env, cb="dtl:eod")
+        await send(env, "09:00")
+        task = (await store.list_tasks(user.id))[0]
+        today = datetime.now(UTC).date()
+        assert task.start_at > datetime.now(UTC) - timedelta(minutes=1)
+        assert task.start_at.hour == soon.hour
+        assert today <= task.start_at.date() <= today + timedelta(days=1)
+
+    async def test_now_button_starts_the_task_immediately(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Разобрать почту")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{home}")
+        f = await send(env, cb="sched:once")
+        assert "now:" in [cb for row in f.last_buttons() for _, cb in row]
+        f = await send(env, cb="now:")          # «▶ Сейчас», no questions asked
+        assert "закончить" in f.texts()[0]
+        await send(env, cb="dtl:eod")
+        await send(env, "09:00")
+        task = (await store.list_tasks(user.id))[0]
+        assert abs((datetime.now(UTC) - task.start_at).total_seconds()) < 120
 
 
 class TestOnboarding:
@@ -347,7 +439,9 @@ class TestWizardKeyboards:
         await send(env, cb=f"place:{pid}")
         await send(env, cb="sched:once")
         rows = fake.last_buttons()
-        assert ("📅 Завтра", "dt:1") in rows[0]
+        cbs = [cb for row in rows for _, cb in row]
+        assert "now:" in cbs                     # «▶ Сейчас» — start this minute
+        assert ("📅 Завтра", "dt:1") in rows[1]
         await send(env, cb="dt:1")
         times = [cb for row in fake.last_buttons() for _, cb in row]
         assert "tm:18:00" in times
@@ -376,7 +470,9 @@ class TestWizardKeyboards:
         await send(env, cb=f"place:{pid}")
         await send(env, cb="sched:once")
         await send(env, cb="dt:0")
-        await send(env, "7:45")
+        f = await send(env, "7:45")
+        assert "понял так" in f.texts()[0]   # the day came from the ⏎ button
+        await send(env, cb="cfm:yes")
         await send(env, "")  # ready-by: end of that day
         await send(env, "")  # default reminder = when it starts
         tasks = await store.list_tasks(user.id)
@@ -599,24 +695,6 @@ class TestSubmenuBack:
         assert "Какая-то" not in [p.name for p in await store.list_places(user.id)]
 
 
-class TestTimeInputFormats:
-    @pytest.mark.parametrize(("typed", "want"), [
-        ("11:55", time(11, 55)),
-        ("11 55", time(11, 55)),
-        ("11.55", time(11, 55)),
-        ("11-55", time(11, 55)),
-        ("9.5", time(9, 5)),
-    ])
-    def test_flexible_separators(self, typed, want):
-        from taskshed.bot.app import _parse_hhmm
-        assert _parse_hhmm(typed) == want
-
-    @pytest.mark.parametrize("typed", ["1155", "11:55:55", "25:00", "11:75", ""])
-    def test_rejects_garbage(self, typed):
-        from taskshed.bot.app import _parse_hhmm
-        assert _parse_hhmm(typed) is None
-
-
 class TestWizardReminderButtons:
     async def test_reminder_time_via_buttons(self, env):
         app, store, fake = env
@@ -675,34 +753,6 @@ class TestSkipOccurrence:
         assert "просрочено 0" in f.texts()[-1]
 
 
-class TestFlexibleDates:
-    @pytest.mark.parametrize(("typed", "want"), [
-        ("2026-11-15", date(2026, 11, 15)),
-        ("15.11.2026", date(2026, 11, 15)),
-        ("15/11/2026", date(2026, 11, 15)),
-        ("15 11 2026", date(2026, 11, 15)),
-        ("15.11.26", date(2026, 11, 15)),
-    ])
-    def test_full_dates(self, typed, want):
-        from taskshed.bot.app import _parse_date
-        assert _parse_date(typed, date(2026, 10, 26)) == want
-
-    def test_short_rolls_forward(self):
-        from taskshed.bot.app import _parse_date
-        assert _parse_date("15.11", date(2026, 10, 26)) == date(2026, 11, 15)
-        assert _parse_date("15.02", date(2026, 10, 26)) == date(2027, 2, 15)
-
-    def test_words(self):
-        from taskshed.bot.app import _parse_date
-        assert _parse_date("завтра", date(2026, 10, 26)) == date(2026, 10, 27)
-        assert _parse_date("Today", date(2026, 10, 26)) == date(2026, 10, 26)
-
-    @pytest.mark.parametrize("typed", ["15.13.2026", "32.11.2026", "abc", "2026-11"])
-    def test_rejects_garbage(self, typed):
-        from taskshed.bot.app import _parse_date
-        assert _parse_date(typed, date(2026, 10, 26)) is None
-
-
 class TestWizardBackAndFlexDates:
     async def _start(self, env):
         app, store, fake = env
@@ -723,7 +773,9 @@ class TestWizardBackAndFlexDates:
         await send(env, cb=f"place:{pid}")
         await send(env, cb="sched:every_n_days")
         await send(env, "3")
-        await send(env, "завтра")  # anchor as a word
+        f = await send(env, "завтра")  # anchor as a word → read back first
+        assert "понял так" in f.texts()[0]
+        await send(env, cb="cfm:yes")
         f = await send(env, cb="tm:09:00")
         assert fake.find("добавлена")
         tasks = await store.list_tasks(user.id)

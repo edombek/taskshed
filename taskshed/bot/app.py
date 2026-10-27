@@ -11,6 +11,7 @@ import re
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from taskshed.bot.timeparse import When, as_clock, as_day, day_ymd, hhmm, parse_when, read_clock
 from taskshed.config import BotCfg
 from taskshed.core.models import Account, Platform, User, UserSettings
 from taskshed.core.models import Place as PlaceDC
@@ -52,10 +53,6 @@ REMINDER_TMS = [[("⏎ 09:00", "tm:09:00")],
                 [("18:00", "tm:18:00"), ("21:00", "tm:21:00")]]
 # snooze durations offered as buttons: 15m/1h/4h/24h
 
-_TIME_RE = re.compile(r"^(\d{1,2})\s*[:.,\-\s]\s*(\d{1,2})$")
-_DATE_FULL_RE = re.compile(r"^(\d{1,4})[ ./-]+(\d{1,2})[ ./-]+(\d{2,4})$")
-_DATE_SHORT_RE = re.compile(r"^(\d{1,2})[ ./-]+(\d{1,2})$")
-
 # URLs are defanged in user-supplied strings (task titles, place names):
 # a bot that sends clickable links can get flagged and banned by Telegram.
 _URL_RE = re.compile(
@@ -71,54 +68,9 @@ def _defang(text: str) -> str:
     return _URL_RE.sub(lambda m: m.group(0).replace(".", "[.]"), text)
 
 
-def _parse_hhmm(s: str) -> time | None:
-    m = _TIME_RE.match(s.strip())
-    if not m:
-        return None
-    h, mi = int(m.group(1)), int(m.group(2))
-    return time(h, mi) if 0 <= h < 24 and 0 <= mi < 60 else None
-
-
-def _parse_date(s: str, today: date) -> date | None:
-    """Flexibly parse a typed date: 2026-11-15, 15.11.2026, 15/11/26,
-    '15 11 2026', 15.11, and the words today/tomorrow (ru+en). Day comes
-    first unless the year does; a year-less date rolls forward."""
-    s = s.strip().lower()
-    if s in ("сегодня", "today"):
-        return today
-    if s in ("завтра", "tomorrow"):
-        return today + timedelta(days=1)
-    m = _DATE_FULL_RE.match(s)
-    short = False
-    if m:
-        a, b, c = (int(g) for g in m.groups())
-        if a > 31:  # YYYY-MM-DD
-            y, mo, d = a, b, c
-        else:  # DD.MM.YYYY / DD.MM.YY (day-first, the RU habit)
-            d, mo, y = a, b, (2000 + c if c < 100 else c)
-    else:
-        m = _DATE_SHORT_RE.match(s)
-        if not m:
-            return None
-        d, mo, y, short = int(m.group(1)), int(m.group(2)), today.year, True
-    try:
-        got = date(y, mo, d)
-    except ValueError:
-        return None
-    if short and got < today:
-        try:
-            got = date(y + 1, mo, d)
-        except ValueError:
-            return None
-    return got
-
-
-def _split_date_time(s: str) -> tuple[str, str | None]:
-    """Split typed 'DATE TIME'; the time may itself use dots ('14.30')."""
-    parts = s.strip().split()
-    if len(parts) >= 2 and _parse_hhmm(parts[-1]) is not None:
-        return " ".join(parts[:-1]), parts[-1]
-    return s.strip(), None
+def _at(d: date, tval: time, tz: ZoneInfo) -> datetime:
+    """Wall-clock moment of `tval` on day `d` in `tz`."""
+    return datetime(d.year, d.month, d.day, tval.hour, tval.minute, tzinfo=tz)
 
 
 class Ctx:
@@ -580,6 +532,7 @@ class BotApp:
                  (t("sched_monthly", ctx.lang), "sched:monthly_day")]] + back)
         elif step == "when":
             await ctx.reply(t("wizard_ask_when", ctx.lang), [
+                [(t("btn_now", ctx.lang), "now:")],
                 [(t("btn_today", ctx.lang), "dt:0"),
                  (t("btn_tomorrow", ctx.lang), "dt:1"),
                  (t("btn_in_2_days", ctx.lang), "dt:2")]] + back)
@@ -682,15 +635,6 @@ class BotApp:
             w["data"]["n"] = int(text)
             self._goto(w, "anchor")
             await self._ask_step(ctx, w)
-        elif step == "anchor":
-            today = datetime.now(ctx.tz).date()
-            anchor = _parse_date(text, today) if text.strip() else today
-            if anchor is None:
-                await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                  hint=t("wizard_ask_anchor_date", ctx.lang)))
-                return
-            w["data"]["anchor"] = anchor.isoformat()
-            await self._wizard_ask_reminder(ctx, w)
         elif step == "monthday":
             if not text.isdigit() or not 1 <= int(text) <= 31:
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
@@ -698,85 +642,160 @@ class BotApp:
                 return
             w["data"]["day"] = int(text)
             await self._wizard_ask_reminder(ctx, w)
-        elif step == "when":
-            hint = t("wizard_ask_when", ctx.lang)
-            dpart, tsrc = _split_date_time(text)
-            d = _parse_date(dpart, datetime.now(ctx.tz).date())
-            tval = _parse_hhmm(tsrc) if tsrc else None
-            if d is None or (tsrc is not None and tval is None):
-                await ctx.reply(t("wizard_bad_input", ctx.lang, hint=hint))
+        elif step in self.WHEN_STEPS:
+            # one reader for every moment the wizard asks about (start,
+            # ready-by, first repeat, reminder time), then a "did I get that
+            # right?" step whenever the parser had to fill anything in
+            await self._when_input(ctx, w, text)
+
+    WHEN_STEPS = ("when", "whentime", "until", "anchor", "reminder")
+    WHEN_HINTS = {"when": "wizard_ask_when", "whentime": "wizard_ask_time",
+                  "until": "wizard_ask_until",
+                  "anchor": "wizard_ask_anchor_date",
+                  "reminder": "wizard_ask_reminder"}
+
+    async def _when_input(self, ctx: Ctx, w: dict, text: str) -> None:
+        """Typed answer to any date/time question: read, resolve, confirm."""
+        step = w["step"]
+        if not text.strip():
+            await self._when_default(ctx, w)      # Enter = the offered default
+            return
+        got = parse_when(text, datetime.now(ctx.tz).date())
+        value, confirm, err = self._resolve_when(ctx, w, got)
+        if err:
+            await ctx.reply(t(err, ctx.lang,
+                              hint=t(self.WHEN_HINTS[step], ctx.lang)))
+            return
+        if value is None:
+            # only a day was given for a moment that also needs a clock
+            w["data"]["picked_date"] = as_day(got).day
+            self._goto(w, "whentime")
+            await self._ask_step(ctx, w)
+            return
+        if confirm:
+            w["pending_when"] = {"step": step, "value": value}
+            ctx.suppress_menu = True
+            await ctx.reply(t("when_confirm", ctx.lang,
+                              when=self._when_label(ctx, value)),
+                            [[(t("when_yes", ctx.lang), "cfm:yes"),
+                              (t("when_no", ctx.lang), "cfm:no")]]
+                            + self._back_row(ctx, w))
+            return
+        await self._apply_when(ctx, w, step, value)
+
+    def _resolve_when(self, ctx: Ctx, w: dict, got: When | None
+                      ) -> tuple[object | None, bool, str | None]:
+        """(value, needs_confirm, error) for the step being answered.
+
+        The value type follows the step: a datetime for the start and the
+        ready-by moment, a date for the first repeat, a time for the reminder.
+        """
+        step = w["step"]
+        if got is None:
+            return None, False, "bad"
+        day_w, clock_w = as_day(got), as_clock(got)
+        if step == "reminder":
+            return ((clock_w.clock, clock_w.guessed, None) if clock_w
+                    else (None, False, "wizard_bad_input"))
+        if step == "anchor":
+            return ((day_w.day, day_w.guessed, None) if day_w
+                    else (None, False, "wizard_bad_input"))
+        day = day_w.day if day_w else None
+        clock = clock_w.clock if clock_w else None
+        confirm = bool(got.guessed)
+        if clock and not day:
+            # a bare time still needs a day: the day work starts, or the next
+            # such moment when the question is about starting
+            if step in ("when", "whentime"):
+                picked = w["data"].get("picked_date")
+                if picked:            # the day was already chosen by button
+                    day = picked
+                else:
+                    now = datetime.now(ctx.tz)
+                    day = now.date()
+                    if _at(day, clock, ctx.tz) <= now:
+                        day += timedelta(days=1)
+            else:
+                start = w["data"].get("start")
+                day = (start.astimezone(ctx.tz).date() if start
+                       else datetime.now(ctx.tz).date())
+            confirm = True
+        if day and not clock and step == "until":
+            clock = time(23, 59)      # a bare day means "by the end of it"
+            confirm = True
+        if not clock:
+            return (None, False, None if day else "wizard_bad_input")
+        value = _at(day, clock, ctx.tz)
+        # nonsense is settled before the "did I read that right?" card
+        if step in ("when", "whentime") and (
+                value.date() < datetime.now(ctx.tz).date()):
+            return None, False, "wizard_deadline_past"
+        start = w["data"].get("start")
+        if step == "until" and start and value <= start:
+            return None, False, "wizard_until_before_start"
+        return value, confirm, None
+
+    async def _when_default(self, ctx: Ctx, w: dict) -> None:
+        """An empty message: take the default the question advertises."""
+        step = w["step"]
+        if step == "until":
+            await self._apply_when(ctx, w, step,
+                                   self._end_of_day(w["data"]["start"], ctx.tz))
+        elif step == "anchor":
+            await self._apply_when(ctx, w, step, datetime.now(ctx.tz).date())
+        elif step == "reminder":
+            await self._wizard_finish(ctx, w, self._reminder_default(ctx, w))
+        else:
+            await ctx.reply(t("wizard_bad_input", ctx.lang,
+                              hint=t(self.WHEN_HINTS[step], ctx.lang)))
+
+    async def _apply_when(self, ctx: Ctx, w: dict, step: str, value) -> None:
+        """Store a resolved moment and move the wizard on."""
+        d = w["data"]
+        if step in ("when", "whentime"):
+            # guards the "2016 instead of 2026" typo: a once-task starting in
+            # the past would materialize nothing and never show up
+            if value.date() < datetime.now(ctx.tz).date():
+                await ctx.reply(t("wizard_deadline_past", ctx.lang,
+                                  hint=t(self.WHEN_HINTS[step], ctx.lang)))
                 return
-            if tval is None:
-                # date only: remember it, ask the time the usual way
-                w["data"]["picked_date"] = d
-                self._goto(w, "whentime")
-                await self._ask_step(ctx, w)
-                return
-            start = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
-                             tzinfo=ctx.tz)
-            # guards the "2016 instead of 2026" typo: a once-task starting
-            # before today would materialize nothing and never show up
-            if start.date() < datetime.now(ctx.tz).date():
-                await ctx.reply(t("wizard_deadline_past", ctx.lang, hint=hint))
-                return
-            w["data"]["start"] = start
+            d["start"] = value
             self._goto(w, "until")
             await self._ask_step(ctx, w)
-        elif step == "whentime":
-            await self._set_start(ctx, w, w["data"]["picked_date"],
-                                  _parse_hhmm(text))
         elif step == "until":
-            await self._set_until(ctx, w, text)
-        elif step == "reminder":
-            rt = self._reminder_default(ctx, w)
-            if text.strip():
-                parsed = _parse_hhmm(text)
-                if parsed is None:
-                    await ctx.reply(t("wizard_bad_input", ctx.lang,
-                                      hint=t("wizard_ask_reminder", ctx.lang)))
-                    return
-                rt = parsed
-            await self._wizard_finish(ctx, w, rt)
-
-    async def _set_start(self, ctx: Ctx, w: dict, d: date,
-                         tval: time | None) -> None:
-        """Shared tail of start entry (button or typed HH:MM)."""
-        if tval is None:
-            await ctx.reply(t("wizard_bad_input", ctx.lang,
-                              hint=t("wizard_ask_time", ctx.lang)))
-            return
-        start = datetime(d.year, d.month, d.day, tval.hour, tval.minute,
-                         tzinfo=ctx.tz)
-        if start.date() < datetime.now(ctx.tz).date():
-            await ctx.reply(t("wizard_deadline_past", ctx.lang,
-                              hint=t("wizard_ask_time", ctx.lang)))
-            return
-        w["data"]["start"] = start
-        self._goto(w, "until")
-        await self._ask_step(ctx, w)
-
-    async def _set_until(self, ctx: Ctx, w: dict, text: str) -> None:
-        """Ready-by moment; Enter means "end of the day it starts on"."""
-        hint = t("wizard_ask_until", ctx.lang)
-        start = w["data"]["start"]
-        if not text.strip():
-            w["data"]["deadline"] = self._end_of_day(start, ctx.tz)
+            start = d.get("start")
+            if start and value <= start:
+                await ctx.reply(t("wizard_until_before_start", ctx.lang,
+                                  hint=t("wizard_ask_until", ctx.lang)))
+                return
+            d["deadline"] = value
             await self._wizard_ask_reminder(ctx, w)
+        elif step == "anchor":
+            d["anchor"] = value.isoformat()
+            await self._wizard_ask_reminder(ctx, w)
+        elif step == "reminder":
+            await self._wizard_finish(ctx, w, value)
+
+    def _when_label(self, ctx: Ctx, value) -> str:
+        """How a resolved moment is read back to the user, in their timezone."""
+        if isinstance(value, datetime):
+            local = value.astimezone(ctx.tz)
+            return f"{local.strftime('%d.%m.%Y')} {hhmm(local.time())}"
+        if isinstance(value, date):
+            return day_ymd(value)
+        return hhmm(value)
+
+    async def _cb_cfm(self, ctx: Ctx, yes: bool) -> None:
+        """✅/✖ on the "did I read that right?" card."""
+        w = self.wizards.get(ctx.user.id)
+        pend = (w or {}).get("pending_when")
+        if not w or not pend:
             return
-        dpart, tsrc = _split_date_time(text)
-        d = _parse_date(dpart, datetime.now(ctx.tz).date())
-        tval = _parse_hhmm(tsrc) if tsrc else None
-        if d is None or (tsrc is not None and tval is None):
-            await ctx.reply(t("wizard_bad_input", ctx.lang, hint=hint))
+        del w["pending_when"]
+        if not yes:
+            await self._ask_step(ctx, w)   # same question, typed again
             return
-        until = datetime(d.year, d.month, d.day,
-                         tval.hour if tval else 23, tval.minute if tval else 59,
-                         tzinfo=ctx.tz)
-        if until <= start:
-            await ctx.reply(t("wizard_until_before_start", ctx.lang, hint=hint))
-            return
-        w["data"]["deadline"] = until
-        await self._wizard_ask_reminder(ctx, w)
+        await self._apply_when(ctx, w, pend["step"], pend["value"])
 
     @staticmethod
     def _end_of_day(when: datetime, tz: ZoneInfo) -> datetime:
@@ -1138,6 +1157,10 @@ class BotApp:
             await self._stats_show(ctx, p, fmt)
         elif action == "dt":
             await self._cb_date(ctx, int(arg))
+        elif action == "now":
+            await self._cb_now(ctx)
+        elif action == "cfm":
+            await self._cb_cfm(ctx, arg == "yes")
         elif action == "tm":
             await self._cb_time(ctx, arg)
         elif action == "wz" and arg == "back":
@@ -1170,6 +1193,15 @@ class BotApp:
             await ctx.reply(t("menu_ask_more", ctx.lang),
                             self._menu_rows(ctx.lang))
 
+    async def _cb_now(self, ctx: Ctx) -> None:
+        """«▶ Сейчас»: the task starts at this very minute, no date questions."""
+        w = self.wizards.get(ctx.user.id)
+        if not w or w.get("kind") != "task" or w.get("step") not in ("when", "whentime"):
+            return
+        w["data"]["start"] = datetime.now(ctx.tz).replace(second=0, microsecond=0)
+        self._goto(w, "until")
+        await self._ask_step(ctx, w)
+
     async def _cb_date(self, ctx: Ctx, offset: int) -> None:
         """Date picked via buttons (today/tomorrow/…) in the task wizard."""
         w = self.wizards.get(ctx.user.id)
@@ -1189,12 +1221,15 @@ class BotApp:
         w = self.wizards.get(ctx.user.id)
         if not w or w.get("step") not in ("whentime", "reminder"):
             return
-        if w["step"] == "reminder":
-            rt = _parse_hhmm(arg)
-            if rt is not None:
-                await self._wizard_finish(ctx, w, rt)
+        tval = read_clock(arg)
+        if tval is None:
             return
-        await self._set_start(ctx, w, w["data"]["picked_date"], _parse_hhmm(arg))
+        if w["step"] == "reminder":
+            await self._wizard_finish(ctx, w, tval)
+            return
+        # a tapped button needs no "did I read that right?" step
+        await self._apply_when(ctx, w, "whentime",
+                               _at(w["data"]["picked_date"], tval, ctx.tz))
 
     async def _cb_until(self, ctx: Ctx, arg: str) -> None:
         """Ready-by presets for a task stretched over time."""
@@ -1553,7 +1588,7 @@ class BotApp:
         values: dict = {}
         if field == "times":
             parts = text.split()
-            parsed = [_parse_hhmm(p) for p in parts]
+            parsed = [read_clock(p) for p in parts]
             if parts and all(p is not None for p in parsed):
                 values = {"remind_mode": "times",
                           "remind_times": [p.strftime("%H:%M") for p in parsed]}
@@ -1569,7 +1604,7 @@ class BotApp:
             values = {"remind_mode": "interval", "remind_interval_min": int(text)}
         elif field == "quiet":
             parts = text.split()
-            parsed = [_parse_hhmm(p) for p in parts]
+            parsed = [read_clock(p) for p in parts]
             if len(parts) != 2 or any(p is None for p in parsed):
                 await ctx.reply(t("wizard_bad_input", ctx.lang,
                                   hint=t("rem_ask_quiet", ctx.lang)))

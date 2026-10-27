@@ -42,7 +42,7 @@
   "wd_su": "Su",
   "wd_done": "Done",
   "wizard_ask_month_day": "Which day of the month? (1–31)",
-  "wizard_ask_when": "When should it start? (e.g. 15.11.2026 14:30 or 15.11 14.30)",
+  "wizard_ask_when": "When do you start? “Now” means this minute. A bare time works (14.30), or a date with one (15 Nov 14.30).",
   "wizard_ask_reminder": "Remind at what time? (HH:MM, or tap a button)",
   "wizard_saved": "Task “{title}” added to “{place}”",
   "wizard_cancelled": "Cancelled.",
@@ -81,7 +81,7 @@
   "btn_today": "📅 Today",
   "btn_tomorrow": "📅 Tomorrow",
   "btn_in_2_days": "📅 In 2 days",
-  "wizard_ask_time": "What time? Tap a button or type HH:MM",
+  "wizard_ask_time": "At what time? Type it, e.g. 13.00, or tap a button.",
   "menu_ask_more": "Would you like to do anything else?",
   "stats_ask_period": "For which period?",
   "btn_per_week": "🗓 Week",
@@ -135,7 +135,7 @@
   "rem_when_interval_btn": "🔁 Every N minutes",
   "rem_mode_times": "at fixed times ({times})",
   "rem_mode_interval": "every {minutes} min",
-  "wizard_ask_until": "By when should it be ready? (Enter = same day, by 23:59)",
+  "wizard_ask_until": "Finish it by when? A bare time (13.00) means the same day; Enter means 23:59.",
   "btn_until_eod": "⏎ same day, 23:59",
   "btn_until_next_day": "next day, 18:00",
   "btn_until_week": "in a week, 18:00",
@@ -179,5 +179,9 @@
   "edit_delete_yes": "✅ Yes, delete",
   "place_delete_ask": "Delete the place “{place}”? It also removes {n} task(s), their whole history.",
   "place_delete_yes": "✅ Yes, delete the place",
-  "place_removed_tasks": "{n} task(s) were removed together with the place."
+  "place_removed_tasks": "{n} task(s) were removed together with the place.",
+  "btn_now": "▶ Now",
+  "when_confirm": "I read: {when}. Right?",
+  "when_yes": "✅ Yes",
+  "when_no": "✖ No, something else"
 }

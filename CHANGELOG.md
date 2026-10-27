@@ -117,6 +117,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Telegram sends `ReplyKeyboardHide` (an empty `ReplyInlineMarkup` is
   rejected by the API; verified live), VK cannot edit and skips it.
 
+- **One shared date/time reader** (`bot/timeparse.py::parse_when`): every step
+  that expects a moment — start, ready-by, first repeat, reminder time, plus the
+  settings inputs — now reads from the same text: `13.00`, `13`, `11-55`,
+  `15.11`, `15 11 2026`, `завтра 18`, `через 3 дня`. It reports *which kind* of
+  value it read (only a time / only a day / both) and whether it had to guess: a
+  missing year, or `9.5` that may be 9 May or 09:05 — ambiguous input carries
+  both readings so the step that asked can pick the one it needs.
+- **The bot asks before believing itself**: whenever the parser filled a hole,
+  the answer comes back as «Я понял так: 28.10.2026 13:00. Верно?» with
+  ✅ Да / ✖ Нет, другое — ✖ puts the same question back. Values that cannot work
+  (ready-by earlier than the start, a date in the past) are refused *before*
+  the card, not after.
+- **«▶ Сейчас» on the "when do you start?" step**: work that has already begun
+  no longer needs a typed minute.
+
 ### Fixed
 - **The main menu comes back after every action**: the task-editor card and the
   places screen used to leave a dialog open in memory, so the *next* answer
@@ -141,3 +156,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   save a task pointing at a place that no longer exists (an FK error now that
   cascades work). The step is simply asked again, then the wizard finishes where
   it stopped.
+- **A typed ready-by time was refused**: «До какого времени нужно закончить?»
+  read a lone `13.00` as a date (month 00) and answered «Не понял», and the same
+  happened on the start step. One reader now handles both, in every step.
