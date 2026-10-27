@@ -99,6 +99,7 @@ VK API uses ordinary HTTPS, so VK takes a regular HTTP/SOCKS5 proxy URL.
 
 ```bash
 ruff check . && pytest      # lint + tests (all chat tests use FakeMessenger — no network)
+python scripts/smoke_chat.py  # offline end-to-end chat walk through the real BotApp
 ```
 
 - Plan & roadmap: [`docs/PLAN.md`](docs/PLAN.md)

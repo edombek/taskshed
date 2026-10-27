@@ -13,6 +13,7 @@ suite (~200 tests) is green in seconds; ruff is clean.
 source .venv/bin/activate          # venv already provisioned (Python 3.14); or:
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ruff check . && pytest             # the CI gate; pytest needs no extra flags
+python scripts/smoke_chat.py       # offline end-to-end chat walk (no network)
 ```
 
 - pytest runs async tests without markers: `asyncio_mode = "auto"` is set in

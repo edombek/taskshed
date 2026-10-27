@@ -102,6 +102,7 @@ HTTP/SOCKS5-прокси.
 
 ```bash
 ruff check . && pytest      # линт + тесты (чат-тесты идут через FakeMessenger, без сети)
+python scripts/smoke_chat.py  # офлайн-прогон всего чат-флоу через боевой BotApp
 ```
 
 - План и дорожная карта: [`docs/PLAN.md`](docs/PLAN.md)

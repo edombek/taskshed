@@ -54,10 +54,17 @@ Checklist of the implementation roadmap. EN summary in
 
 ## Stage 7 — Real-world verification 🚧
 - [x] `config.yaml` filled: Telegram token + local MTProxy (`127.0.0.1:8888`)
-- [x] Alembic `upgrade head` on the real file DB (`taskshed.db`, head `b5c04a0c009c`)
-- [x] Telegram smoke: bot connects through the proxy (`start(bot_token=…)`, Telethon 1.45)
+- [x] Alembic `upgrade head` on the real file DB (`taskshed.db`, head `f2a6b83c14d9`)
+- [x] Offline smoke of the whole chat flow (places → task → ✅ → stats CSV +
+      silence rule): `scripts/smoke_chat.py`, runs on the production code
+      path with `FakeMessenger`, no network
+- [ ] Telegram smoke: bot connects through the proxy — **blocked 2026-10-27**:
+      MTProxy on 127.0.0.1:8888 takes the TCP + obfuscated2 handshake but
+      never answers `req_pq` (upstream dead); direct DC:443 is blocked, so a
+      working proxy is required
 - [ ] Telegram chat flow: places → tasks → digest → ✅ → stats (interactive)
 - [ ] VK: real community token + `group_id` (placeholders removed), enable
+      (`getLongPollServer` probe answers error 15 with `group_id=0`)
 - [ ] VK smoke: long poll connects, `/старт` replies
 - [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
 

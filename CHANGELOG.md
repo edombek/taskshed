@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The «Где вы сейчас?» question honors its own invitation**: with no places
+  saved it said «add one by text», but typing a name only re-asked forever;
+  now the typed name creates the place and answers the question. Unknown names
+  once places exist still just re-ask — without a menu follow-up piling on top
+  of the modal question.
+- **`/старт`** now works as a Russian alias of `/start`.
+
 ### Changed
 - **`BotApp` split by feature** (pure refactor, no behavior change): the
   1.8k-line `bot/app.py` now keeps only dispatch; each dialog lives in its
