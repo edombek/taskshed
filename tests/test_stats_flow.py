@@ -21,8 +21,8 @@ class TestStatsCommands:
                                        {"n": 1, "anchor": today.isoformat()},
                                        datetime.now(UTC).timetz().replace(second=0,
                                                                           microsecond=0))
-        await store.materialize_occurrences(task, today, 0, "UTC")
-        occ, _ = (await store.occurrences_today(user.id, today, "UTC"))[0]
+        await store.materialize_occurrences(task, today, 0)
+        occ, _ = (await store.occurrences_today(user.id, today))[0]
         await store.mark_done(occ.id, "telegram")
         f = await send(env, "/статистика неделя")
         assert "Отчёт" in f.texts()[0] and "100%" in f.texts()[0]
@@ -47,7 +47,7 @@ class TestStatsCommands:
             task = await store.create_task(
                 user.id, pid, title, ScheduleType.EVERY_N_DAYS,
                 {"n": 1, "anchor": today.isoformat()}, time(9, 0))
-            await store.materialize_occurrences(task, today, 0, "UTC")
+            await store.materialize_occurrences(task, today, 0)
         f = await send(env, "/статистика неделя")
         text = f.texts()[0]
         assert "📍 Дом" in text and "📍 Работа" in text
@@ -67,7 +67,7 @@ class TestStatsIncludePlanned:
         future = datetime.now(UTC) + timedelta(hours=20)  # inside the stats window
         task = await store.create_task(user.id, p.id, "запланировано", ScheduleType.ONCE,
                                        {}, time(9, 0), deadline=future)
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 8, "UTC")
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 8)
         f = await send(env, "/статистика всё")
         assert "запланировано" in f.texts()[-1]
 
@@ -82,7 +82,7 @@ class TestInteractiveStats:
                                        {"n": 1,
                                         "anchor": datetime.now(UTC).date().isoformat()},
                                        time(9, 0))
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 3, "UTC")
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 3)
 
     async def test_period_asked_via_buttons(self, env):
         await self._seed(env)
@@ -130,8 +130,8 @@ class TestChartHorizonAndHours:
         task = await store.create_task(
             user.id, pid, "Отчёт", ScheduleType.EVERY_N_DAYS,
             {"n": 1, "anchor": today.isoformat()}, time(9, 0))
-        await store.materialize_occurrences(task, today, 1, "UTC")
-        for occ, _ in await store.occurrences_today(user.id, today, "UTC"):
+        await store.materialize_occurrences(task, today, 1)
+        for occ, _ in await store.occurrences_today(user.id, today):
             await store.mark_done(occ.id, "telegram")
         return app, store, fake, user
 
@@ -164,8 +164,8 @@ class TestChartHorizonAndHours:
                                        ScheduleType.EVERY_N_DAYS,
                                        {"n": 1, "anchor": today.isoformat()},
                                        time(9, 0))
-        await store.materialize_occurrences(task, today, 1, "UTC")
-        occs = await store.occurrences_today(user.id, today, "UTC")
+        await store.materialize_occurrences(task, today, 1)
+        occs = await store.occurrences_today(user.id, today)
         await store.skip(occs[0][0].id)
         app._pending_inputs.clear()
         await app.handle(RawEvent("telegram", PID, callback="fmt:hours:week"))

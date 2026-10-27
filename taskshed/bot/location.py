@@ -40,7 +40,7 @@ class LocationMixin:
         if was_pending:
             # the digest comes last: its buttons are the ones to tap now, while
             # the resumed dialog carries on as typed input
-            await self._digest_now(ctx.user.id, ctx.account)
+            await self.notify_now(ctx.user.id, ctx.account)
 
     async def _replay(self, ctx: Ctx, parked: dict) -> None:
         """Put the interrupted dialog back and ask its question once more."""
@@ -96,8 +96,8 @@ class LocationMixin:
         await self.store.update_settings(ctx.user.id, pending_reminder=False)
         intent = self._pending_inputs.pop(ctx.user.id, None)
         if intent == "tasks":
-            await self._send_task_list(ctx, place)
+            await self._cmd_tasks(ctx, "")
         else:
             await ctx.reply(t("where_set", ctx.lang, name=place.name))
         if was_pending:
-            await self._digest_now(ctx.user.id, ctx.account)
+            await self.notify_now(ctx.user.id, ctx.account)

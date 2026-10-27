@@ -16,28 +16,43 @@ platform-independent core.
   into the task wizard, which creates them. Place management is one live screen:
   typed names add, 🗑 asks right in the message (deleting a place takes its
   tasks and history), ✔️ Готово leaves.
-- Schedules: one-off tasks with a **start and a ready-by deadline** — or just a
-  moment, when you tap **no deadline** — they can be moved to ▶ in progress
-  (started work is never counted as missed), every
-  N days, specific weekdays, day of month; every repeat is a materialized
-  **occurrence** you can mark ✅ done, ⏭ postpone (15 min/1 h/4 h/1 day) or
-  ⏭ skip right from the reminder message.
-- **One ⚙️ settings screen** per user: reminders (fixed times or interval
-  mode), quiet hours, time zone, how long your chosen location stays valid,
-  how far ahead charts are drawn, language and the **platform linking status** (Telegram/VK).
+- Four schedule kinds — **one-off**, **every N days**, **by weekdays**, **every
+  M of the month** — and all four answer the same two questions: the **deadline**
+  (a moment for a one-off, a clock on each repeat day for the rest) and **how
+  long before it to warn you** (5 minutes…a week). Deadlines are kept on *your*
+  clock: the bot stores them as wall-clock in your time zone and re-derives the
+  whole open future the moment you change it. A one-off can also open a work
+  window («from … to …») and be moved to ▶ in progress — started work is never
+  counted as missed. Every repeat is a materialized **occurrence** you can mark
+  ✅ done, 💤 notify later (15 min/1 h/4 h/1 day), ⏭ skip or ▶ in progress right
+  inside its own message.
+- **One message per task**: a notice is the header, then one message per task of
+  your current place with its own buttons, then the other places as one brief
+  line-up, and a single ✅ Готово that ends the round and brings the menu back.
+  Tapping a button re-draws that very message instead of adding another one.
+- **Two moments of their own**: a **morning digest** at a time you set (everything
+  due today, everything whose warning opened today, and everything whose warning
+  already passed while the deadline is still ahead), and a **repeat every T
+  minutes** for tasks sitting between their warning moment and their deadline.
+- **One ⚙️ settings screen** per user: reminders on/off, the morning moment, the
+  repeat interval, quiet hours, time zone, how long your chosen location stays
+  valid, how far ahead charts are drawn, language and the **platform linking
+  status** (Telegram/VK).
 - **One way to say a time**: `13.00`, `13`, `завтра 9`, `15.11 14.30` parse the
   same way in every question, the bot repeats what it understood («Понял так:
-  27.10.2026 13:00. Верно?») before saving, and the start step offers **▶ Сейчас**.
-- **Task editor** (`/edit`): change the title, place, repeat rule, work window
-  or reminder of any task, or delete it — upcoming, recurring and past tasks
-  are one tab away. Editing a schedule rebuilds the open repeats and keeps the
-  finished history.
+  27.10.2026 13:00. Верно?») before saving, and every question also has buttons.
+- **Task editor** (`/edit`): change the title, place, repeat rule, deadline or
+  the warning lead of any task, or delete it — upcoming, recurring and past
+  tasks are one tab away. Editing a schedule rebuilds the open repeats and keeps
+  the finished history.
 - Only the newest screen stays clickable: keyboards of older messages are
   stripped automatically.
-- **No noise**: if you have no tasks today, or none match your current place,
-  the bot says nothing. Stale location → it just asks "Where are you now?", and
-  that question is modal: a dialog you were in the middle of (task wizard,
-  report) waits behind it and is replayed afterwards — or you tap ⏭ Not now.
+- **No noise**: if there is nothing to announce today — no open repeat whose
+  deadline is ahead and whose warning moment has come — the bot says nothing.
+  A notice is built for the place you are at: its tasks in full, the others in
+  brief. Stale location → it just asks "Where are you now?", and that question
+  is modal: a dialog you were in the middle of (task wizard, report) waits
+  behind it and is replayed afterwards — or you tap ⏭ Not now.
 - **Statistics**: text summary, CSV/XLSX export, PNG charts — **everything
   split by place**, one copy of every report per place. A GitHub-style activity
   heatmap (missed / planned / skipped markers, drawn forward to the horizon

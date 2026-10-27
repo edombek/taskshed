@@ -1,5 +1,6 @@
 """The per-user settings screen and the values it awaits by text."""
 
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from taskshed.bot.context import Ctx
@@ -48,14 +49,15 @@ class SettingsMixin:
             for p in (str(e) for e in Platform))
         status = t("settings_status", ctx.lang,
                    on=t("rem_on" if st.reminders_on else "rem_off", ctx.lang),
-                   mode=self._rem_mode_label(st, ctx.lang),
+                   morning=f"{st.morning_time:%H:%M}", nag=st.nag_interval_min,
                    quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
                    ttl=st.location_ttl_hours, horizon=st.stats_horizon_days,
                    tz=st.tz, platforms=platforms,
                    language="Русский" if ctx.lang == "ru" else "English")
         rows = [
             [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
-            [(t("btn_rem_when", ctx.lang), "rem:when")],
+            [(t("btn_rem_morning", ctx.lang), "rem:morning"),
+             (t("btn_rem_nag", ctx.lang), "rem:nag")],
             [(t("btn_rem_quiet", ctx.lang), "rem:quiet"),
              (t("btn_rem_ttl", ctx.lang), "rem:ttl")],
             [(t("btn_rem_tz", ctx.lang), "rem:tz"),
@@ -85,11 +87,6 @@ class SettingsMixin:
             self._rem_msgs[key] = new_id
             self._track_kb(ctx.user.id, ctx.account, new_id, status)
 
-    def _rem_mode_label(self, st, lang: str) -> str:
-        if st.remind_mode == "times":
-            return t("rem_mode_times", lang, times=" ".join(st.remind_times))
-        return t("rem_mode_interval", lang, minutes=st.remind_interval_min)
-
     async def _cb_rem(self, ctx: Ctx, arg: str) -> None:
         if arg == "toggle":
             st = await self.store.update_settings(
@@ -97,17 +94,6 @@ class SettingsMixin:
             )
             ctx.settings = st
             await self._settings_status(ctx)
-            return
-        if arg == "when":
-            # one entry point for both modes: pick the mode, then the value
-            ctx.suppress_menu = True
-            await ctx.reply(
-                t("rem_when_ask", ctx.lang,
-                  mode=self._rem_mode_label(ctx.settings, ctx.lang)), [
-                    [(t("rem_when_times_btn", ctx.lang), "rem:times")],
-                    [(t("rem_when_interval_btn", ctx.lang), "rem:interval")],
-                    [(t("btn_back", ctx.lang), "rem:back")],
-                ])
             return
         if arg == "back":
             # leave the sub-question without leaving the settings screen
@@ -129,7 +115,7 @@ class SettingsMixin:
         if arg.startswith("unlink:"):
             await self._cb_unlink_acc(ctx, arg.split(":", 1)[1])
             return
-        if arg in ("times", "interval", "quiet", "ttl", "tz", "horizon"):
+        if arg in ("morning", "nag", "quiet", "ttl", "tz", "horizon"):
             self._pending_inputs[ctx.user.id] = f"reminput:{arg}"
             ctx.suppress_menu = True  # the next message is the value itself
             await ctx.reply(t(f"rem_ask_{arg}", ctx.lang),
@@ -157,20 +143,17 @@ class SettingsMixin:
 
     async def _reminput(self, ctx: Ctx, field: str, text: str) -> None:
         values: dict = {}
-        if field == "times":
-            parts = text.split()
-            parsed = [read_clock(p) for p in parts]
-            if parts and all(p is not None for p in parsed):
-                values = {"remind_mode": "times",
-                          "remind_times": [p.strftime("%H:%M") for p in parsed]}
-            else:
-                await self._reminput_bad(ctx, "times")
+        if field == "morning":
+            clock = read_clock(text)
+            if clock is None:
+                await self._reminput_bad(ctx, "morning")
                 return
-        elif field == "interval":
+            values = {"morning_time": clock}
+        elif field == "nag":
             if not text.isdigit() or int(text) < 5:
-                await self._reminput_bad(ctx, "interval")
+                await self._reminput_bad(ctx, "nag")
                 return
-            values = {"remind_mode": "interval", "remind_interval_min": int(text)}
+            values = {"nag_interval_min": int(text)}
         elif field == "quiet":
             parts = text.split()
             parsed = [read_clock(p) for p in parts]
@@ -197,5 +180,12 @@ class SettingsMixin:
             values = {"stats_horizon_days": int(text)}
         st = await self.store.update_settings(ctx.user.id, **values)
         ctx.settings = st
+        if field == "tz":
+            # task plans are stored as the user's wall-clock, so the open
+            # future has to be re-derived: "к 18:00" keeps meaning 18:00 here
+            new_tz = ZoneInfo(st.tz)
+            await self.store.replan_open_occurrences(
+                ctx.user.id, datetime.now(new_tz).date(),
+                max(self.cfg.occurrence_horizon_days, st.stats_horizon_days))
         # value changed → the settings screen updates in place, no new copy
         await self._settings_status(ctx)

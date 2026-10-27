@@ -164,6 +164,35 @@ Checklist of the implementation roadmap. EN summary in
 - [x] Modal «Где вы сейчас?»: an open wizard/list intent is parked, the place
       answer (button or typed name) resumes it; «⏭ Не сейчас» skips the question
 
+## Stage 9 — Deadlines, notice leads, morning digest ✅
+- [x] Every schedule kind answers the same two questions: the **deadline**
+      (`deadline_time` clock on repeat days, a moment for a one-off) and
+      **how long before it to warn** (`notify_before_min`; buttons 5 мин…неделю
+      or typed `30` / `2 часа` / `за 3 дня`). The per-task `reminder_time`,
+      the «без срока» and «▶ Сейчас» steps are gone.
+- [x] Two kinds of moments, kept apart on purpose: plans (`tasks.deadline`,
+      `start_at`, `deadline_time`, settings clocks) are the **owner's
+      wall-clock**, materialized rows (`task_occurrences.due_at`,
+      `notify_at = due_at − lead`) are real UTC instants. The store resolves the
+      owner's tz itself, so a tz change re-derives the open future
+      (`Store.replan_open_occurrences`) and leaves finished history alone.
+- [x] Announcement sets: `store.rows_to_announce(user, day)` (open, deadline
+      today or later, notice moment today or earlier) and
+      `store.rows_in_window(user, now)` (inside `[notify_at, due_at)`).
+- [x] Two triggers instead of the times list: **morning digest** at
+      `settings.morning_time` once per calendar day, and an
+      **every-`nag_interval_min` repeat** over the window rows; 💤 «Уведомить
+      позже» pushes a single row's `notify_at` out.
+- [x] A notice is built for the current place: its tasks as separate messages
+      with buttons, other places as one brief line-up, closed by one ✅ «Готово»
+      (`fin:`) which ends the status round and returns the main menu.
+- [x] Migration `a7f3c2d81b64` (settings → `morning_time`/`nag_interval_min`/
+      `last_morning_at`/`last_notified_at`, `reminder_at` → `notify_at`, plan
+      columns converted to the owner's wall-clock); applied to the dev DB.
+- [ ] Live re-verification in Telegram: wizard deadline+lead, `/задачи` notice
+      with «Готово», `/настройки` morning/T/tz (replan), morning digest and the
+      T-repeat in `bot.log`.
+
 ## Backlog / known limitations
 - VK photo/document upload for charts is best-effort (falls back to text).
 - Task-creation wizard state is in-memory (lost on restart).

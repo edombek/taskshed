@@ -7,7 +7,7 @@ in BotBase: one dict per feature, keyed by user id.
 """
 
 import logging
-from datetime import datetime, time
+from datetime import datetime
 
 from taskshed.bot.base import BotBase
 from taskshed.bot.cards import TaskCardsMixin
@@ -19,7 +19,7 @@ from taskshed.bot.location import LocationMixin
 from taskshed.bot.places import PlacesMixin
 from taskshed.bot.reports import ReportsMixin
 from taskshed.bot.settings import SettingsMixin
-from taskshed.bot.wizard import TaskWizardMixin
+from taskshed.bot.wizard import DEFAULT_LEAD_MIN, TaskWizardMixin
 from taskshed.i18n import normalize, t
 from taskshed.messaging.base import ButtonRows, RawEvent
 
@@ -86,8 +86,7 @@ class BotApp(
         horizon = max(self.cfg.occurrence_horizon_days,
                       ctx.settings.stats_horizon_days, ahead_days)
         for task in await self.store.list_tasks(ctx.user.id):
-            await self.store.materialize_occurrences(
-                task, today, horizon, ctx.settings.tz, back_days)
+            await self.store.materialize_occurrences(task, today, horizon, back_days)
 
     async def _on_text(self, ctx: Ctx, text: str) -> None:
         wizard = self.wizards.get(ctx.user.id)
@@ -221,9 +220,10 @@ class BotApp(
                     return
                 if w.get("only") == "weekdays":
                     # editor: picking the days is the whole change
-                    await self._wizard_finish(ctx, w, w["data"].get("rt", time(9, 0)))
+                    await self._wizard_finish(ctx, w,
+                                              w["data"].get("lead", DEFAULT_LEAD_MIN))
                     return
-                await self._wizard_ask_reminder(ctx, w)
+                await self._after_days(ctx, w)
         elif action == "pdel":
             await self._cb_place_delete(ctx, int(arg), False)
         elif action == "pdno":
@@ -258,12 +258,14 @@ class BotApp(
             await self._cb_snooze(ctx, int(arg))
         elif action == "skip":
             await self._cb_skip(ctx, int(arg))
-        elif action == "dtl":
-            await self._cb_until(ctx, arg)
+        elif action == "ln":
+            await self._cb_lead(ctx, arg)
         elif action == "snz":
             await self._cb_snooze_set(ctx, arg)
         elif action == "snzb":
             await self._cb_snooze_back(ctx, int(arg))
+        elif action == "fin":
+            await self._cb_notification_finish(ctx)
         elif action == "lang":
             await self._set_lang(ctx, normalize(arg))
         elif action == "rem":
@@ -277,8 +279,6 @@ class BotApp(
             await self._hours_week(ctx, int(arg))
         elif action == "dt":
             await self._cb_date(ctx, int(arg))
-        elif action == "now":
-            await self._cb_now(ctx)
         elif action == "cfm":
             await self._cb_cfm(ctx, arg == "yes")
         elif action == "tm":

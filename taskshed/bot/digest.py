@@ -1,21 +1,29 @@
-"""One message per task, the reminder digest, and the buttons inside both.
+"""One message per task, the notices that carry them, the buttons inside.
 
 A task message owns its occurrence: tapping a button re-renders that very
-message (buttons off when the task is closed) — no confirmation messages,
-no menu follow-up after every tap.
+message (buttons off when the task is closed) — no confirmation messages, no
+menu follow-up after every tap. A notice is built for the user's current
+place: its tasks get a message each with buttons, tasks of other places come
+as one brief line-up, and a «Готово» button under the last message ends the
+round and hands the main menu back.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from taskshed.bot.context import Ctx
 from taskshed.core.models import Account, UserSettings
 from taskshed.core.models import Place as PlaceDC
+from taskshed.core.scheduling import in_notice_window
 from taskshed.i18n import t
-from taskshed.messaging.base import ButtonRows
+from taskshed.messaging.base import ButtonRows, IMessenger
+
+NOTICE_OTHERS_LIMIT = 12
 
 
 class DigestMixin:
+
+    # ---------- /задачи ----------
 
     async def _cmd_tasks(self, ctx: Ctx, _: str) -> None:
         await self.ensure_materialized(ctx)
@@ -25,7 +33,17 @@ class DigestMixin:
             await self._ask_location(ctx, resume={"pending": "tasks"})
             return
         place, _ = loc
-        await self._send_task_list(ctx, place)
+        today = datetime.now(ctx.tz).date()
+        rows = await self.store.occurrences_today(ctx.user.id, today)
+        mine = [(o, task) for o, task in rows if task.place_id == place.id]
+        others = [(o, task) for o, task in rows if task.place_id != place.id]
+        if not mine and not others:
+            await ctx.reply(t("tasks_empty", ctx.lang, place=place.name))
+            return
+        ctx.suppress_menu = True  # the notice ends with its own «Готово»
+        await self._send_notice(ctx.messenger, ctx.account, ctx.user.id, ctx.lang,
+                                ctx.tz, t("tasks_header", ctx.lang, place=place.name),
+                                mine, others)
 
     # ---------- task buttons ----------
 
@@ -91,6 +109,16 @@ class DigestMixin:
                 await ctx.reply(t("msg_snoozed", ctx.lang, minutes=int(mins),
                                   title=got[1].title))
 
+    async def _cb_notification_finish(self, ctx: Ctx) -> None:
+        """«Готово» under a notice: stop editing statuses, main menu back.
+
+        ctx.reply disarms every keyboard of this chat on the way, so the task
+        messages of this notice lose their buttons right here.
+        """
+        self._fin_msgs.pop((ctx.user.id, ctx.account.id), None)
+        ctx.suppress_menu = True  # the menu below *is* the follow-up
+        await ctx.reply(t("menu_ask_more", ctx.lang), self._menu_rows(ctx.lang))
+
     # ---------- one task, one message ----------
 
     def _task_line(self, lang: str, tz: ZoneInfo, occ, task) -> str:
@@ -122,9 +150,9 @@ class DigestMixin:
             return [[(t("btn_done", lang), f"done:{occ.id}"),
                      (t("btn_skip", lang), f"skip:{occ.id}")]]
         return [[(t("btn_done", lang), f"done:{occ.id}"),
-                 (t("btn_wip", lang), f"wip:{occ.id}")],
+                 (t("btn_skip", lang), f"skip:{occ.id}")],
                 [(t("btn_snooze", lang), f"snooze:{occ.id}"),
-                 (t("btn_skip", lang), f"skip:{occ.id}")]]
+                 (t("btn_wip", lang), f"wip:{occ.id}")]]
 
     def _snooze_rows(self, lang: str, occ_id: int) -> ButtonRows:
         return [[(t("btn_snz_15", lang), f"snz:{occ_id}:15"),
@@ -169,93 +197,117 @@ class DigestMixin:
             ctx, occ_id, self._task_line(ctx.lang, ctx.tz, got[0], got[1]),
             self._task_rows(ctx.lang, got[0]))
 
-    # ---------- sending ----------
+    # ---------- notices: this place in full, other places in brief ----------
 
-    async def _send_task_list(self, ctx: Ctx, place: PlaceDC) -> None:
-        today = datetime.now(ctx.tz).date()
-        occs = await self.store.occurrences_today(ctx.user.id, today, ctx.settings.tz,
-                                                  place_id=place.id)
-        if not occs:
-            await ctx.reply(t("tasks_empty", ctx.lang, place=place.name))
-            return
-        await ctx.reply(t("tasks_header", ctx.lang, place=place.name))
-        for occ, task in occs:
-            await self._send_task_msg(ctx, ctx.lang, ctx.tz, occ, task)
+    async def _accounts_for(self, settings: UserSettings,
+                            origin: Account | None = None) -> list[Account]:
+        """Accounts this user's notices are allowed to reach."""
+        accounts = await self.store.get_accounts(settings.user_id)
+        if settings.notify_platforms == "primary":
+            if origin is not None:
+                return [a for a in accounts if a.platform == origin.platform]
+            return sorted(accounts, key=lambda a: a.last_seen or a.linked_at)[-1:]
+        return accounts
 
-    async def _send_task_msg(self, ctx: Ctx, lang: str, tz: ZoneInfo,
-                             occ, task) -> None:
-        text = self._task_line(lang, tz, occ, task)
-        rows = self._task_rows(lang, occ)
-        if not rows:
-            await ctx.messenger.send_text(ctx.account, text)
-            return
-        mid = await ctx.messenger.send_buttons(ctx.account, text, rows)
-        self._track_kb(ctx.user.id, ctx.account, mid, text)
-        self._track_tl(ctx.user.id, ctx.account, mid, occ.id)
+    def _others_block(self, lang: str, tz: ZoneInfo, others, names: dict) -> str:
+        """Other places' tasks: short lines, no buttons — they are not here."""
+        lines = [t("notif_others", lang)]
+        for occ, task in others[:NOTICE_OTHERS_LIMIT]:
+            lines.append(t("notif_other_row", lang,
+                           place=names.get(task.place_id, "?"), title=task.title,
+                           due=occ.due_at.astimezone(tz).strftime("%d.%m %H:%M")))
+        if len(others) > NOTICE_OTHERS_LIMIT:
+            lines.append(t("notif_more", lang, n=len(others) - NOTICE_OTHERS_LIMIT))
+        return "\n".join(lines)
 
-    async def build_digest(self, user_id: int, settings: UserSettings, place: PlaceDC):
-        """(header, [(occ_id, text, rows)]) of today's tasks, or None for silence.
+    async def _send_notice(self, messenger: IMessenger, acc: Account, user_id: int,
+                           lang: str, tz: ZoneInfo, header: str, mine, others) -> None:
+        """Header + one message per task of this place + brief others + «Готово»."""
+        await self._strip_keyboards(messenger, acc, user_id)
+        await messenger.send_text(acc, header)
+        armed = False
+        for occ, task in mine:
+            text = self._task_line(lang, tz, occ, task)
+            rows = self._task_rows(lang, occ)
+            if not rows:
+                await messenger.send_text(acc, text)
+                continue
+            mid = await messenger.send_buttons(acc, text, rows)
+            self._track_kb(user_id, acc, mid, text)
+            self._track_tl(user_id, acc, mid, occ.id)
+            armed = True
+        if others:
+            names = {p.id: p.name for p in await self.store.list_places(user_id)}
+            await messenger.send_text(acc, self._others_block(lang, tz, others, names))
+        if armed:
+            # the round ends when the user says so — one «Готово» under all of it
+            text = t("notif_footer", lang)
+            mid = await messenger.send_buttons(
+                acc, text, [[(t("btn_finish", lang), "fin:")]])
+            self._track_kb(user_id, acc, mid, text)
+            if mid:
+                self._fin_msgs[(user_id, acc.id)] = mid
 
-        The header names the place; every task is a message of its own.
-        """
-        tz = ZoneInfo(settings.tz)
-        today = datetime.now(tz).date()
-        occs = await self.store.occurrences_today(user_id, today, settings.tz,
-                                                  place_id=place.id)
-        if not occs:
-            return None
+    async def send_notification(self, user_id: int, settings: UserSettings,
+                                place: PlaceDC, rows, *, morning: bool = False,
+                                origin: Account | None = None) -> bool:
+        """One notice: tasks of `place` as separate messages with buttons, the
+        rest of the places as short lines. False when there is nothing to say."""
+        mine = [(o, task) for o, task in rows if task.place_id == place.id]
+        others = [(o, task) for o, task in rows if task.place_id != place.id]
+        if not mine and not others:
+            return False
         lang = "ru"
         user = await self.store.get_user(user_id)
         if user:
             lang = user.language
-        items = [(occ.id, self._task_line(lang, tz, occ, task),
-                  self._task_rows(lang, occ)) for occ, task in occs]
-        return t("tasks_header", lang, place=place.name), items
-
-    async def send_digest(self, user_id: int, settings: UserSettings,
-                          place: PlaceDC, origin: Account | None = None) -> bool:
-        """Header + one message per task into every account the settings allow."""
-        digest = await self.build_digest(user_id, settings, place)
-        if digest is None:
-            return False
-        header, items = digest
-        accounts = await self.store.get_accounts(user_id)
-        if settings.notify_platforms == "primary":
-            if origin is not None:
-                accounts = [a for a in accounts if a.platform == origin.platform]
-            else:
-                accounts = sorted(accounts,
-                                  key=lambda a: a.last_seen or a.linked_at)[-1:]
-        for acc in accounts:
+        tz = ZoneInfo(settings.tz)
+        header = t("notif_header_morning" if morning else "notif_header_repeat",
+                   lang, place=place.name)
+        for acc in await self._accounts_for(settings, origin):
             messenger = self.messengers.get(acc.platform)
             if not messenger:
                 continue
-            await self._strip_keyboards(messenger, acc, user_id)
-            await messenger.send_text(acc, header)
-            for occ_id, text, rows in items:
-                if not rows:
-                    await messenger.send_text(acc, text)
-                    continue
-                mid = await messenger.send_buttons(acc, text, rows)
-                self._track_kb(user_id, acc, mid, text)
-                self._track_tl(user_id, acc, mid, occ_id)
+            await self._send_notice(messenger, acc, user_id, lang, tz, header,
+                                    mine, others)
         return True
 
-    async def _digest_now(self, user_id: int, origin: Account) -> bool:
+    async def notify_now(self, user_id: int, origin: Account | None = None,
+                         morning: bool | None = None) -> bool:
+        """Send the notice that was waiting for a place, right now.
+
+        The place is known; the set is re-read through the user's current
+        timezone, so a stale row planned in another zone is not what we send.
+        """
         settings = await self.store.get_settings(user_id)
         loc = await self.store.get_location(user_id)
         if loc is None:
             return False
-        return await self.send_digest(user_id, settings, loc[0], origin=origin)
+        now = datetime.now(UTC)
+        tz = ZoneInfo(settings.tz)
+        today = now.astimezone(tz).date()
+        if morning is None:
+            morning = not (settings.last_morning_at and
+                           settings.last_morning_at.astimezone(tz).date() >= today)
+        todays = await self.store.rows_to_announce(user_id, today)
+        rows = todays if morning else [(o, task) for o, task in todays
+                                       if in_notice_window(o, now)]
+        if not rows:
+            return False
+        if not await self.send_notification(user_id, settings, loc[0], rows,
+                                            morning=morning, origin=origin):
+            return False
+        values = {"last_notified_at": now}
+        if morning:
+            values["last_morning_at"] = now
+        await self.store.update_settings(user_id, **values)
+        return True
 
     async def notify_user(self, user_id: int, text: str,
                           buttons: ButtonRows | None = None) -> None:
         """Send to every linked account (or the most recently active one)."""
         settings = await self.store.get_settings(user_id)
-        accounts = await self.store.get_accounts(user_id)
-        if settings.notify_platforms == "primary":
-            accounts = sorted(accounts, key=lambda a: a.last_seen or a.linked_at)[-1:]
-        for acc in accounts:
+        for acc in await self._accounts_for(settings):
             messenger = self.messengers.get(acc.platform)
             if messenger:
                 await self._strip_keyboards(messenger, acc, user_id)

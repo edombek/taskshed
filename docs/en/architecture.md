@@ -97,9 +97,8 @@ erDiagram
     user_settings {
         int user_id PK "also FK to users"
         bool reminders_on
-        string remind_mode "times|interval"
-        json remind_times "HH:MM list, user tz"
-        int remind_interval_min
+        string morning_time "HH:MM, user wall-clock: the daily digest"
+        int nag_interval_min "repeat for tasks inside the notice window"
         string quiet_start "HH:MM"
         string quiet_end "HH:MM"
         int location_ttl_hours
@@ -107,7 +106,8 @@ erDiagram
         string notify_platforms "all|primary"
         string stats_format "both|text|image"
         int stats_horizon_days "chart lookahead, default 7"
-        datetime last_reminded_at "nullable"
+        datetime last_morning_at "nullable, UTC"
+        datetime last_notified_at "nullable, UTC"
         bool pending_reminder "digest awaiting location answer"
     }
     tasks {
@@ -116,19 +116,20 @@ erDiagram
         int place_id FK
         string title
         text note
-        datetime deadline "ready-by moment, nullable"
-        datetime start_at "work begins (once tasks), nullable"
+        datetime deadline "wall-clock plan in the user tz, nullable"
+        datetime start_at "work begins (once tasks), wall-clock, nullable"
         string schedule_type "once|every_n_days|weekdays|monthly_day"
         json schedule_data
-        string reminder_time "HH:MM user tz"
+        string deadline_time "HH:MM clock of the deadline on repeat days"
+        int notify_before_min "warn this many minutes before the deadline"
         bool is_active
         datetime created_at
     }
     task_occurrences {
         int id PK
         int task_id FK "UNIQUE(task_id, due_at)"
-        datetime due_at "deadline of this repeat, UTC"
-        datetime reminder_at "when the reminder may fire"
+        datetime due_at "deadline of this repeat, UTC instant"
+        datetime notify_at "due_at minus the task lead, UTC instant"
         datetime start_at "work window opens (once tasks), nullable"
         string status "pending|in_progress|done|missed|skipped"
     }
@@ -202,17 +203,31 @@ is what makes Telegram↔VK linking trivial.
 ### Schedules and occurrences
 
 `schedule_type`: `once` · `every_n_days` · `weekdays` · `monthly_day`,
-parameters in `schedule_data` (JSON). Occurrences are materialized a few days
-ahead (`bot.occurrence_horizon_days`); each has `due_at`, `reminder_at`,
-`start_at`, `status ∈ {pending, in_progress, done, missed, skipped}`. A
-background pass flips `pending` rows whose deadline passed to `missed`; a
-user-skipped occurrence becomes `skipped` — it is hidden from today's list,
-never turns into `missed` and does not count against the completion percent.
-A one-off task is not a single instant: `tasks.start_at` opens a work window
-and `tasks.deadline` is the ready-by moment, so the row shows «from … to …»
-and appears in the list from its start day on. Tapping **▶ В работе** sets
-`in_progress`: the deadline stays, the row is never punished as missed, and
-it remains visible until done or skipped.
+parameters in `schedule_data` (JSON). Every kind answers the same two
+questions: **when it has to be ready** and **how long before that to warn** —
+`deadline_time` (the clock the deadline falls at on each repeat day) plus
+`notify_before_min`; a one-off instead stores its own ready-by moment in
+`tasks.deadline`.
+
+**Plans are kept in the user's own time.** `tasks.deadline`, `tasks.start_at`,
+`tasks.deadline_time` and the settings clocks are wall-clock values on the
+owner's calendar, never host time. `task_occurrences` are real UTC instants
+derived from those plans: `due_at` is the deadline,
+`notify_at = due_at − notify_before_min`. Switching a user's `tz` re-derives
+their whole open future (`Store.replan_open_occurrences`) — «к 18:00» still
+means 18:00 on *their* watch — while finished history is left untouched.
+
+Occurrences are materialized a few days ahead
+(`bot.occurrence_horizon_days`); each has `start_at` and
+`status ∈ {pending, in_progress, done, missed, skipped}`. A background pass
+flips `pending` rows whose deadline passed to `missed`; a user-skipped
+occurrence becomes `skipped` — it is hidden from today's list, never turns
+into `missed` and does not count against the completion percent. A one-off task
+is not a single instant either: `tasks.start_at` opens a work window and
+`tasks.deadline` is the ready-by moment, so the row shows «from … to …» and
+appears in the list from its start day on. Tapping **▶ В работе** sets
+`in_progress`: the deadline stays, the row is never punished as missed, and it
+remains visible until done or skipped.
 
 ### Reminder tick
 
@@ -227,47 +242,56 @@ sequenceDiagram
 
     Sch->>Core: mark_overdue(now): pending past due → missed<br/>(in_progress work stays open)
     loop per user (in user tz)
-        Core->>Core: reminders_on? materialize horizon,<br/>trigger reached (times/interval<br/>or any occurrence reminder_at)? quiet hours?
-        alt no trigger / quiet / reminders off
-            Core-->>Sch: silent
-        end
-        Core->>Core: occurrences due today (any place)
-        alt none
+        Core->>Core: reminders_on? materialize the horizon,<br/>quiet hours?
+        Note over Core: plans are the user's wall-clock (deadline,<br/>deadline_time) — every instant is re-derived<br/>through their current tz
+        Core->>Core: rows_to_announce = open repeats with<br/>due_at ≥ start of today and notify_at ≤ end of today<br/>(notify_at = due_at − notify_before_min)
+        alt nothing to announce (any place)
             Core-->>Sch: silent (no message at all)
+        end
+        Core->>Core: morning digest due? (morning_time reached,<br/>not yet sent this calendar day)<br/>repeat due? ≥ nag_interval_min since last_notified_at<br/>for rows inside [notify_at, due_at)
+        alt neither trigger
+            Core-->>Sch: silent
         end
         Core->>Core: current_location fresh? (set_at + ttl > now)
         alt stale or unset
-            Core->>Msg: "Where are you now?" + place buttons<br/>+ «Not now» (once: pending_reminder=true, last_reminded_at=now)
+            Core->>Msg: "Where are you now?" + place buttons<br/>+ «Not now» (once: pending_reminder=true)
             Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] … [⏭ Не сейчас]
             Core->>Core: whatever dialog is in progress (wizard, list intent)<br/>is parked — the question is modal
             U->>Msg: tap "place:42" (or type a place name)
             Msg->>Core: set location, pending_reminder=false
-            Core->>Msg: the parked dialog is replayed, then the digest follows
+            Core->>Msg: the parked dialog is replayed, then the notice follows
         else fresh
-            Core->>Core: digest = today's occurrences at that place
-            alt empty
-                Core-->>Sch: silent
-            end
+            Core->>Core: notice = tasks of the current place in full,<br/>tasks of other places in brief
         end
-        Core->>Msg: digest header + one message per task<br/>(older keyboards of this chat get disarmed)
-        Msg->>U: 📋 Задачи «Работа» на сегодня:<br/>📌 Отчёт — до 18:00 [✅][▶][💤][⏭]<br/>📌 Полка — с 26.10 09:00 до 30.10 18:00 [✅][▶][💤][⏭]<br/>📌 Созвон — до 12:00 ⚠️просрочено [✅][▶][💤][⏭]
+        Core->>Msg: notice header + one message per task of this place<br/>+ one brief line-up for the others + «Готово»<br/>(older keyboards of this chat get disarmed)
+        Msg->>U: 🌅 Доброе утро. Задачи «Работа» на сегодня:<br/>📌 Отчёт — до 18:00 [✅ Готово][⏭ Пропустить][💤 Позже][▶ В работе]<br/>📌 Созвон — до 12:00 ⚠️просрочено [✅][⏭][💤][▶]<br/>📍 Другие места: • Дом: Полить цветы — до 20:00<br/>✅ Готово
     end
     U->>Msg: "done:42" button on a task's own message
     Msg->>Core: ownership check → status=done + completions row
     Core->>Msg: the very task message is re-rendered: ✅ mark,<br/>keyboard gone — no confirmation, no menu, no chat spam
-    U->>Msg: "wip:42" → the message now reads «▶ в работе»,<br/>keyboard becomes [✅][⏭]; the task is never marked missed
+    U->>Msg: "wip:42" → the message now reads «▶ в работе»,<br/>keyboard becomes [✅][⏭] — and the task is never marked missed
     U->>Msg: "snooze:42" → the same message shows duration buttons<br/>[15м][1ч][4ч][+сутки][⬅️]
-    U->>Msg: "snz:42:60" → note «💤 Напомню через 60 мин», buttons return
+    U->>Msg: "snz:42:60" → the notice moment of this row moves out by an hour,<br/>the every-T repeat picks the task up again after that
     U->>Msg: "skip:42" → status=skipped: «⏭пропущено»,<br/>keyboard off, never flipped to missed, no penalty in stats
-    Msg->>U: after any completed command outside a task message:<br/>"Хотите сделать что-нибудь ещё?" + command menu
+    U->>Msg: "fin:" under the notice → the status round ends,<br/>the main menu returns and every keyboard of the notice is disarmed
 ```
 <!-- mermaid:end reminder-flow -->
 
 Hard rules:
-1. quiet hours / `reminders_on=false` / trigger moment not reached → nothing;
-2. no occurrences due today → nothing;
-3. location older than `location_ttl_hours` → ask with place buttons first;
-4. no occurrences for the current place → nothing.
+1. quiet hours / `reminders_on=false` → nothing;
+2. nothing to announce today — no open repeat with `due_at` ≥ start of the
+   day and `notify_at` ≤ end of the day → nothing;
+3. no trigger yet → nothing. There are two: the **morning digest** at
+   `morning_time` (once per calendar day, wall-clock in the user's zone) and
+   the **every-`nag_interval_min` repeat** over rows sitting inside
+   `[notify_at, due_at)`;
+4. location older than `location_ttl_hours` → ask «where are you?» with place
+   buttons first (the question is modal: an open dialog is parked and
+   replayed afterwards);
+5. a notice then sends the tasks of the **current place** as one message each
+   with buttons, the tasks of **other places** as one brief line-up, and closes
+   with a single «Готово» (`fin:`) which ends the status round and returns the
+   main menu.
 
 ### Account linking
 

@@ -104,6 +104,30 @@ def read_day(token: str, today: date) -> tuple[date, bool] | None:
     return got, short
 
 
+_LEAD_RE = re.compile(r"^(?:за\s+)?(\d{1,4})\s*([а-яa-z.]{0,7})?$")
+# how a bare number or a word reads: minutes unless a unit is spelled out
+_LEAD_UNITS = {
+    "": 1, "мин": 1, "минута": 1, "минуты": 1, "минут": 1, "m": 1, "min": 1,
+    "mins": 1,
+    "ч": 60, "час": 60, "часа": 60, "часов": 60, "h": 60, "hr": 60,
+    "hour": 60, "hours": 60,
+    "д": 1440, "дн": 1440, "день": 1440, "дня": 1440, "дней": 1440,
+    "сут": 1440, "суток": 1440, "d": 1440, "day": 1440, "days": 1440,
+}
+
+
+def parse_lead(text: str) -> int | None:
+    """«За сколько до срока предупредить»: 30, 30 мин, 2 часа, 3 дня → минуты."""
+    m = _LEAD_RE.match(" ".join(text.strip().lower().split()))
+    if not m:
+        return None
+    unit = (m.group(2) or "").rstrip(".")
+    if unit and unit not in _LEAD_UNITS:
+        return None                     # "5 недель" is not a unit we speak
+    mins = int(m.group(1)) * _LEAD_UNITS.get(unit, 1)
+    return mins if 0 <= mins <= 60 * 24 * 365 else None
+
+
 def as_clock(got: When) -> When | None:
     """The reading that gives a clock time (the ambiguous one if needed)."""
     if got.clock:

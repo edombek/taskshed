@@ -24,15 +24,16 @@ class TestTaskEditor:
             start_at=datetime.now(UTC) + timedelta(days=1))
         every = await store.create_task(
             user.id, home, "Полить", ScheduleType.EVERY_N_DAYS,
-            {"n": 1, "anchor": today.isoformat()}, time(9, 0))
-        await store.materialize_occurrences(every, today, 3, "UTC")
+            # a late clock: today's repeat is still ahead whatever the hour
+            {"n": 1, "anchor": today.isoformat()}, time(23, 0))
+        await store.materialize_occurrences(every, today, 3)
         weekly = await store.create_task(
             user.id, home, "Стирка", ScheduleType.WEEKDAYS,
             {"weekdays": [2]}, time(9, 0))
         back = await store.create_task(
             user.id, home, "Прошлое", ScheduleType.EVERY_N_DAYS,
             {"n": 5, "anchor": (today - timedelta(days=30)).isoformat()}, time(9, 0))
-        await store.materialize_occurrences(back, today - timedelta(days=30), 25, "UTC")
+        await store.materialize_occurrences(back, today - timedelta(days=30), 25)
         await store.mark_overdue(datetime.now(UTC))
         return store, user, future.id, every.id, weekly.id, back.id, work
 
@@ -63,7 +64,8 @@ class TestTaskEditor:
         assert "повесить полку" in f.texts()[0] and "Изменено" in f.texts()[0]
         task = await store.get_task(user.id, future)
         assert task.title == "повесить полку"
-        assert task.start_at and task.reminder_time == time(9, 0)
+        assert task.start_at and task.deadline_time == time(9, 0)
+        assert task.notify_before_min == 60
 
     async def test_move_to_another_place(self, env):
         store, user, future, *_, work = await self._seed(env)
@@ -71,12 +73,31 @@ class TestTaskEditor:
         await send(env, cb=f"place:{work}")
         assert (await store.get_task(user.id, future)).place_id == work
 
-    async def test_change_reminder_moment(self, env):
-        store, user, future, *_ = await self._seed(env)
-        await send(env, cb=f"edf:{future}:reminder")
+    async def test_change_the_deadline_clock_of_a_repeat(self, env):
+        """A repeat is due at this clock: editing it re-times the open days."""
+        store, user, _, every, *_ = await self._seed(env)
+        await send(env, cb=f"edf:{every}:dtime")
         f = await send(env, cb="tm:07:15")
-        assert "07:15" in f.texts()[0]
-        assert (await store.get_task(user.id, future)).reminder_time == time(7, 15)
+        assert "Изменено" in f.texts()[0] and "07:15" in f.texts()[0]
+        task = await store.get_task(user.id, every)
+        assert task.deadline_time == time(7, 15)
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC), datetime.now(UTC) + timedelta(days=3))
+        assert all(o.due_at.astimezone(UTC).strftime("%H:%M") == "07:15"
+                   for o, t in occs if t.id == every)
+
+    async def test_change_the_warning_lead(self, env):
+        store, user, _, every, *_ = await self._seed(env)
+        await send(env, cb=f"edf:{every}:lead")
+        f = await send(env, "за 2 часа")
+        assert "Изменено" in f.texts()[0] and "2 ч" in f.texts()[0]
+        task = await store.get_task(user.id, every)
+        assert task.notify_before_min == 120
+        occs = await store.occurrences_in_range(
+            user.id, datetime.now(UTC), datetime.now(UTC) + timedelta(days=3))
+        mine = [o for o, t in occs if t.id == every]
+        assert mine and all(o.due_at - o.notify_at == timedelta(hours=2)
+                            for o in mine)
 
     async def test_change_weekdays_only(self, env):
         store, user, _, _, weekly, *_ = await self._seed(env)
@@ -85,23 +106,22 @@ class TestTaskEditor:
         await send(env, cb="wdsubmit")
         task = await store.get_task(user.id, weekly)
         assert sorted(task.schedule_data["weekdays"]) == [2, 4]
-        assert task.reminder_time == time(9, 0)
+        assert task.deadline_time == time(9, 0)
 
-    async def test_moving_the_window_rebuilds_open_repeats(self, env):
+    async def test_moving_the_deadline_rebuilds_open_repeats(self, env):
         store, user, future, *_ = await self._seed(env)
         await send(env, cb=f"edf:{future}:when")
-        await send(env, cb="dt:6")        # start six days ahead
-        await send(env, cb="tm:11:00")
-        await send(env, cb="dtl:eod")     # ready by the end of that day
+        await send(env, cb="dt:6")        # six days ahead
         f = await send(env, cb="tm:11:00")
         assert "Изменено" in f.texts()[0]
         task = await store.get_task(user.id, future)
-        assert task.start_at.date() == (datetime.now(UTC) + timedelta(days=6)).date()
-        # the old repeat is gone, the new one exists
+        assert task.deadline.strftime(
+            "%d.%m") == (datetime.now(UTC) + timedelta(days=6)).strftime("%d.%m")
+        # the old repeat is gone, the new one sits on the new moment
         occs = await store.occurrences_in_range(
             user.id, datetime.now(UTC), datetime.now(UTC) + timedelta(days=9))
         mine = [o for o, t in occs if t.id == future]
-        assert len(mine) == 1 and mine[0].start_at.date() == task.start_at.date()
+        assert len(mine) == 1 and mine[0].due_at == task.deadline
 
     async def test_delete_asks_then_removes_history_too(self, env):
         store, user, _, _, _, back, _ = await self._seed(env)

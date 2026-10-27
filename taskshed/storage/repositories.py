@@ -2,6 +2,11 @@
 
 Returns core dataclasses (taskshed.core.models) so that handlers, scheduler
 and core logic never touch ORM rows.
+
+The store is also the one place that knows a user's timezone: it reads the
+wall-clock task plans back *through that zone* and derives occurrence instants
+in it, so a plan like "каждый вторник к 18:00" is always re-computed against
+the user's current timezone — never against the host clock.
 """
 
 from __future__ import annotations
@@ -64,6 +69,24 @@ def _naive(dt: datetime) -> datetime:
     return dt.astimezone(UTC).replace(tzinfo=None)
 
 
+def _plan(dt: datetime | None, tz: ZoneInfo) -> datetime | None:
+    """Write a plan moment as the user's wall-clock (naive, their calendar)."""
+    if dt is None:
+        return None
+    return dt.astimezone(tz).replace(tzinfo=None)
+
+
+def _wall(dt: datetime | None, tz: ZoneInfo) -> datetime | None:
+    """Read a plan moment back: the stored wall-clock, in the user's zone now.
+
+    This is the re-reading step — the same "18:00" becomes a different instant
+    after the user switches timezone, which is exactly what it should mean.
+    """
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
 def _time(s: str) -> time:
     h, m = s.split(":")
     return time(int(h), int(m))
@@ -77,32 +100,34 @@ def _place(r: Place) -> PlaceDC:
     return PlaceDC(id=r.id, user_id=r.user_id, name=r.name)
 
 
-def _task(r: Task) -> TaskDC:
+def _task(r: Task, tz: ZoneInfo) -> TaskDC:
     return TaskDC(
         id=r.id, user_id=r.user_id, place_id=r.place_id, title=r.title, note=r.note,
-        deadline=_aware(r.deadline), start_at=_aware(r.start_at),
-        schedule_type=r.schedule_type,
-        schedule_data=r.schedule_data or {}, reminder_time=_time(r.reminder_time),
+        deadline=_wall(r.deadline, tz), start_at=_wall(r.start_at, tz),
+        schedule_type=r.schedule_type, schedule_data=r.schedule_data or {},
+        deadline_time=_time(r.deadline_time or "23:59"),
+        notify_before_min=int(r.notify_before_min or 0),
         is_active=r.is_active,
     )
 
 
 def _occ(r: TaskOccurrence) -> OccDC:
     return OccDC(id=r.id, task_id=r.task_id, due_at=_aware(r.due_at),
-                 reminder_at=_aware(r.reminder_at), start_at=_aware(r.start_at),
+                 notify_at=_aware(r.notify_at), start_at=_aware(r.start_at),
                  status=r.status)
 
 
 def _settings(r: UserSettings) -> SettingsDC:
     return SettingsDC(
-        user_id=r.user_id, reminders_on=r.reminders_on, remind_mode=r.remind_mode,
-        remind_times=list(r.remind_times or []),
-        remind_interval_min=r.remind_interval_min,
+        user_id=r.user_id, reminders_on=r.reminders_on,
+        morning_time=_time(r.morning_time or "09:00"),
+        nag_interval_min=r.nag_interval_min,
         quiet_start=_time(r.quiet_start), quiet_end=_time(r.quiet_end),
         location_ttl_hours=r.location_ttl_hours, tz=r.tz,
         notify_platforms=r.notify_platforms, stats_format=r.stats_format,
         stats_horizon_days=r.stats_horizon_days,
-        last_reminded_at=_aware(r.last_reminded_at),
+        last_morning_at=_aware(r.last_morning_at),
+        last_notified_at=_aware(r.last_notified_at),
         pending_reminder=r.pending_reminder,
     )
 
@@ -201,16 +226,22 @@ class Store:
             return _settings(row)
 
     async def update_settings(self, user_id: int, **values) -> SettingsDC:
-        for k in ("quiet_start", "quiet_end"):
+        for k in ("quiet_start", "quiet_end", "morning_time"):
             if isinstance(values.get(k), time):
                 values[k] = values[k].strftime("%H:%M")
-        if "last_reminded_at" in values and values["last_reminded_at"]:
-            values["last_reminded_at"] = _naive(values["last_reminded_at"])
+        for k in ("last_morning_at", "last_notified_at"):
+            if values.get(k):
+                values[k] = _naive(values[k])
         async with self._sf() as s:
             await s.execute(update(UserSettings).where(UserSettings.user_id == user_id)
                              .values(**values))
             await s.commit()
         return await self.get_settings(user_id)
+
+    async def _tz_of(self, s, user_id: int) -> ZoneInfo:
+        """The zone this user's plans are read and re-derived through."""
+        row = await s.get(UserSettings, user_id)
+        return ZoneInfo(row.tz) if row else ZoneInfo("UTC")
 
     # ---------- places & location ----------
 
@@ -271,49 +302,57 @@ class Store:
 
     async def create_task(self, user_id: int, place_id: int, title: str,
                           schedule_type: str, schedule_data: dict,
-                          reminder_time: time, deadline: datetime | None = None,
-                          note: str = "", start_at: datetime | None = None) -> TaskDC:
+                          deadline_time: time = time(23, 59),
+                          notify_before_min: int = 60,
+                          deadline: datetime | None = None, note: str = "",
+                          start_at: datetime | None = None) -> TaskDC:
         async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
             t = Task(
                 user_id=user_id, place_id=place_id, title=title[:200], note=note,
                 schedule_type=schedule_type, schedule_data=schedule_data,
-                reminder_time=reminder_time.strftime("%H:%M"),
-                deadline=_naive(deadline) if deadline else None,
-                start_at=_naive(start_at) if start_at else None,
+                deadline_time=deadline_time.strftime("%H:%M"),
+                notify_before_min=max(0, int(notify_before_min)),
+                # stored as the user's wall-clock, not as a host instant
+                deadline=_plan(deadline, tz), start_at=_plan(start_at, tz),
             )
             s.add(t)
             await s.commit()
-            return _task(t)
+            return _task(t, tz)
 
     async def list_tasks(self, user_id: int, place_id: int | None = None,
                          active_only: bool = True) -> list[TaskDC]:
         async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
             q = select(Task).where(Task.user_id == user_id)
             if place_id is not None:
                 q = q.where(Task.place_id == place_id)
             if active_only:
                 q = q.where(Task.is_active.is_(True))
             rows = (await s.scalars(q.order_by(Task.id))).all()
-            return [_task(r) for r in rows]
+            return [_task(r, tz) for r in rows]
 
     async def get_task(self, user_id: int, task_id: int) -> TaskDC | None:
         async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
             row = await s.scalar(select(Task).where(Task.id == task_id,
                                                    Task.user_id == user_id))
-            return _task(row) if row else None
+            return _task(row, tz) if row else None
 
     async def save_task(self, task: TaskDC) -> bool:
         """Write an edited task back (id/user_id pick the row)."""
         async with self._sf() as s:
+            tz = await self._tz_of(s, task.user_id)
             res = await s.execute(
                 update(Task)
                 .where(Task.id == task.id, Task.user_id == task.user_id)
                 .values(title=task.title, note=task.note, place_id=task.place_id,
                         schedule_type=task.schedule_type,
                         schedule_data=task.schedule_data,
-                        reminder_time=task.reminder_time.strftime("%H:%M"),
-                        deadline=_naive(task.deadline) if task.deadline else None,
-                        start_at=_naive(task.start_at) if task.start_at else None))
+                        deadline_time=task.deadline_time.strftime("%H:%M"),
+                        notify_before_min=max(0, int(task.notify_before_min or 0)),
+                        deadline=_plan(task.deadline, tz),
+                        start_at=_plan(task.start_at, tz)))
             await s.commit()
             return bool(res.rowcount)
 
@@ -333,12 +372,12 @@ class Store:
     # ---------- occurrences ----------
 
     async def materialize_occurrences(self, task: TaskDC, today: date,
-                                      horizon_days: int, tz: str,
-                                      back_days: int = 0) -> int:
-        tzinfo = ZoneInfo(tz)
-        planned = plan_occurrences(task, today, horizon_days, tzinfo, back_days)
-        inserted = 0
+                                      horizon_days: int, back_days: int = 0) -> int:
+        """Derive this task's repeats over the window through its owner's zone."""
         async with self._sf() as s:
+            tz = await self._tz_of(s, task.user_id)
+            planned = plan_occurrences(task, today, horizon_days, tz, back_days)
+            inserted = 0
             for occ in planned:
                 exists = await s.scalar(
                     select(TaskOccurrence.id).where(
@@ -348,15 +387,61 @@ class Store:
                 )
                 if exists is None:
                     s.add(TaskOccurrence(task_id=task.id, due_at=_naive(occ.due_at),
-                                         reminder_at=_naive(occ.reminder_at),
+                                         notify_at=_naive(occ.notify_at),
                                          start_at=_naive(occ.start_at)
                                          if occ.start_at else None))
                     inserted += 1
             await s.commit()
         return inserted
 
+    async def day_window(self, user_id: int,
+                         day: date | None = None) -> tuple[datetime, datetime]:
+        """First and last instant of one of *this user's* calendar days."""
+        async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
+        d = day or datetime.now(tz).date()
+        return (datetime.combine(d, time.min, tzinfo=tz),
+                datetime.combine(d, time.max, tzinfo=tz))
+
+    async def _open_rows(self, user_id: int, condition) -> list[tuple[OccDC, TaskDC]]:
+        async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
+            q = (
+                select(TaskOccurrence, Task)
+                .join(Task, Task.id == TaskOccurrence.task_id)
+                .where(Task.user_id == user_id, Task.is_active.is_(True),
+                       TaskOccurrence.status.in_(("pending", "in_progress")),
+                       condition)
+                .order_by(TaskOccurrence.due_at)
+            )
+            rows = await s.execute(q)
+            return [(_occ(o), _task(t, tz)) for o, t in rows]
+
+    async def rows_to_announce(self, user_id: int,
+                               day: date | None = None) -> list[tuple[OccDC, TaskDC]]:
+        """Repeats the user has to hear about on this calendar day.
+
+        Open, deadline today or later, notice moment today or earlier — so a
+        repeat whose warning went out days ago and whose deadline is still
+        ahead keeps showing up until it is done or skipped.
+        """
+        start, end = await self.day_window(user_id, day)
+        return await self._open_rows(
+            user_id,
+            (TaskOccurrence.due_at >= _naive(start))
+            & (TaskOccurrence.notify_at <= _naive(end)))
+
+    async def rows_in_window(self, user_id: int,
+                             now: datetime) -> list[tuple[OccDC, TaskDC]]:
+        """Open repeats sitting between their notice moment and their deadline:
+        the set the every-T-minutes repeat is about."""
+        return await self._open_rows(
+            user_id,
+            (TaskOccurrence.notify_at <= _naive(now))
+            & (TaskOccurrence.due_at > _naive(now)))
+
     async def occurrences_today(self, user_id: int, today_local: date,
-                                tz: str, place_id: int | None = None) -> list[tuple[OccDC, TaskDC]]:
+                                place_id: int | None = None) -> list[tuple[OccDC, TaskDC]]:
         """Occurrences that concern the user-local date.
 
         That is: due today, already started (a task stretched over time shows
@@ -364,9 +449,10 @@ class Store:
         In-progress rows are never dropped for being overdue — work started
         on them is not punished as missed.
         """
-        tzinfo = ZoneInfo(tz)
-        day_start = _naive(datetime.combine(today_local, time.min, tzinfo=tzinfo))
-        day_end = _naive(datetime.combine(today_local, time.max, tzinfo=tzinfo))
+        async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
+        day_start = _naive(datetime.combine(today_local, time.min, tzinfo=tz))
+        day_end = _naive(datetime.combine(today_local, time.max, tzinfo=tz))
         open_row = TaskOccurrence.status.notin_(["done", "skipped"])
         async with self._sf() as s:
             q = (
@@ -387,7 +473,7 @@ class Store:
             if place_id is not None:
                 q = q.where(Task.place_id == place_id)
             rows = await s.execute(q.order_by(TaskOccurrence.due_at))
-            return [(_occ(o), _task(t)) for o, t in rows]
+            return [(_occ(o), _task(t, tz)) for o, t in rows]
 
     async def mark_done(self, occurrence_id: int, via: str) -> bool:
         async with self._sf() as s:
@@ -401,15 +487,17 @@ class Store:
             return True
 
     async def snooze(self, occurrence_id: int, minutes: int) -> bool:
+        """💤 «Уведомить позже»: move the notice moment, nothing else."""
         async with self._sf() as s:
             occ = await s.get(TaskOccurrence, occurrence_id)
             if not occ or occ.status == "done":
                 return False
             now = datetime.now(UTC)
             delta = timedelta(minutes=minutes)
-            occ.reminder_at = _naive(now + delta)
+            occ.notify_at = _naive(now + delta)
             due = _aware(occ.due_at)
             if due <= now:
+                # an expired deadline needs a deadline to be late for
                 occ.due_at = _naive(now + delta)
             await s.commit()
             return True
@@ -462,6 +550,29 @@ class Store:
             await s.commit()
             return res.rowcount or 0
 
+    async def replan_open_occurrences(self, user_id: int, today: date,
+                                      horizon_days: int) -> int:
+        """Re-derive every open repeat of this user from its plan.
+
+        What a timezone change needs: the plans are wall-clock, so switching
+        zones means the same "18:00" now stands for a different instant.
+        Finished history is left alone; the open future is rebuilt.
+        """
+        async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
+            day_start = _naive(datetime.combine(today, time.min, tzinfo=tz))
+            res = await s.execute(
+                delete(TaskOccurrence).where(
+                    TaskOccurrence.task_id.in_(
+                        select(Task.id).where(Task.user_id == user_id)),
+                    TaskOccurrence.status.in_(("pending", "in_progress")),
+                    TaskOccurrence.due_at >= day_start))
+            await s.commit()
+            dropped = res.rowcount or 0
+        for task in await self.list_tasks(user_id):
+            await self.materialize_occurrences(task, today, horizon_days)
+        return dropped
+
     # ---------- linking ----------
 
     async def create_link_code(self, user_id: int, platform: str) -> str:
@@ -507,7 +618,10 @@ class Store:
             if not row:
                 return None
             task = await s.get(Task, row.task_id)
-            return (_occ(row), _task(task)) if task else None
+            if not task:
+                return None
+            tz = await self._tz_of(s, task.user_id)
+            return _occ(row), _task(task, tz)
 
     async def merge_user(self, from_id: int, to_id: int) -> None:
         """Move places/tasks of `from_id` into `to_id`, rename name clashes."""
@@ -535,6 +649,7 @@ class Store:
     async def occurrences_in_range(self, user_id: int, start: datetime,
                                    end: datetime) -> list[tuple[OccDC, TaskDC]]:
         async with self._sf() as s:
+            tz = await self._tz_of(s, user_id)
             rows = await s.execute(
                 select(TaskOccurrence, Task)
                 .join(Task, Task.id == TaskOccurrence.task_id)
@@ -543,4 +658,4 @@ class Store:
                        TaskOccurrence.due_at <= _naive(end))
                 .order_by(TaskOccurrence.due_at)
             )
-            return [(_occ(o), _task(t)) for o, t in rows]
+            return [(_occ(o), _task(t, tz)) for o, t in rows]

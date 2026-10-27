@@ -29,6 +29,9 @@ class BotBase:
         # One task per message: a tap re-renders that very message, and the
         # keyboard dies with the task (done/skipped) — no chat spam
         self._tl_msgs: dict[tuple[int, int], dict[str, int]] = {}
+        # the «Готово» button closing the last notice of this chat: pressing it
+        # ends the status-editing round and hands the main menu back
+        self._fin_msgs: dict[tuple[int, int], str] = {}
         # last tab of the task editor per user: where ⬅️ Назад goes back to
         self._edit_tab: dict[int, str] = {}
         # a "where are you?" that interrupted something else: the interrupted
@@ -60,6 +63,7 @@ class BotBase:
         live = self._kb_msgs.pop((user_id, account.id), {})
         live_tl = self._tl_msgs.pop((user_id, account.id), {})
         self._pl_msgs.pop((user_id, account.id), None)
+        self._fin_msgs.pop((user_id, account.id), None)
         for mid, text in live.items():
             if mid == keep:
                 continue

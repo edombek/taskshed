@@ -1,7 +1,14 @@
 """SQLAlchemy 2.x ORM tables.
 
-Naming mirrors docs/diagrams/er-diagram.mmd. All datetime columns store
-timezone-aware UTC (SQLite: naive UTC; PostgreSQL: timestamptz).
+Naming mirrors docs/diagrams/er-diagram.mmd. Two time conventions live here,
+and they are deliberately different:
+
+* plan columns (`tasks.deadline`, `tasks.start_at`, `tasks.deadline_time`)
+  store the **user's wall-clock**, naive — the owner's timezone is applied
+  when reading, so a plan means the same thing on the user's clock in any zone;
+* materialized columns (`task_occurrences.due_at/notify_at/start_at` and the
+  `last_*` stamps) store real UTC instants (SQLite: naive UTC; PostgreSQL:
+  timestamptz) — they are re-derived from the plan when the zone changes.
 """
 
 from __future__ import annotations
@@ -54,9 +61,8 @@ class UserSettings(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     reminders_on: Mapped[bool] = mapped_column(Boolean, default=True)
-    remind_mode: Mapped[str] = mapped_column(String(10), default="times")
-    remind_times: Mapped[list] = mapped_column(JSON, default=lambda: ["09:00"])
-    remind_interval_min: Mapped[int] = mapped_column(Integer, default=120)
+    morning_time: Mapped[str] = mapped_column(String(5), default="09:00")
+    nag_interval_min: Mapped[int] = mapped_column(Integer, default=60)
     quiet_start: Mapped[str] = mapped_column(String(5), default="23:00")
     quiet_end: Mapped[str] = mapped_column(String(5), default="07:00")
     location_ttl_hours: Mapped[int] = mapped_column(Integer, default=6)
@@ -64,7 +70,8 @@ class UserSettings(Base):
     notify_platforms: Mapped[str] = mapped_column(String(10), default="all")
     stats_format: Mapped[str] = mapped_column(String(10), default="both")
     stats_horizon_days: Mapped[int] = mapped_column(Integer, default=7)
-    last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_morning_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # last digest state: pending reminder awaiting location answer
     pending_reminder: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -93,11 +100,15 @@ class Task(Base):
     place_id: Mapped[int] = mapped_column(ForeignKey("places.id", ondelete="CASCADE"))
     title: Mapped[str] = mapped_column(String(200))
     note: Mapped[str] = mapped_column(Text, default="")
+    # Plan side: wall-clock in the *user's* calendar (naive on purpose). The
+    # owner's timezone is applied on every read, so switching zones moves the
+    # plan with the user instead of freezing the old host offset.
     deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     start_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deadline_time: Mapped[str] = mapped_column(String(5), default="23:59")  # HH:MM
+    notify_before_min: Mapped[int] = mapped_column(Integer, default=60)
     schedule_type: Mapped[str] = mapped_column(String(20))
     schedule_data: Mapped[dict] = mapped_column(JSON, default=dict)
-    reminder_time: Mapped[str] = mapped_column(String(5), default="09:00")  # HH:MM user tz
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -107,8 +118,10 @@ class TaskOccurrence(Base):
     __table_args__ = (UniqueConstraint("task_id", "due_at"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
+    # Materialized instants: real UTC moments derived from the task's plan at
+    # materialization time; a timezone change drops and re-derives open rows.
     due_at: Mapped[datetime] = mapped_column(DateTime)
-    reminder_at: Mapped[datetime] = mapped_column(DateTime)
+    notify_at: Mapped[datetime] = mapped_column(DateTime)
     start_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending")
 

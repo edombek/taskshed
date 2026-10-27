@@ -24,14 +24,16 @@ class EditorMixin:
     EDIT_TABS = ("future", "recurring", "past", "all")
     # field → wizard step it is edited with
     EDIT_STEPS = {"title": "title", "place": "place", "schedule": "schedule",
-                  "when": "when", "reminder": "reminder", "weekdays": "days"}
+                  "when": "when", "dtime": "dtime", "lead": "lead",
+                  "weekdays": "days"}
     # fields that end right after the value (the rest keep the wizard chain)
-    EDIT_SINGLE = ("title", "place", "reminder", "weekdays")
+    EDIT_SINGLE = ("title", "place", "lead", "weekdays", "dtime", "when")
 
     def _edit_wizard(self, task, tab: str) -> dict:
         """Wizard state pre-filled from an existing task (edit mode)."""
         d: dict = {"title": task.title, "place_id": task.place_id,
-                   "stype": str(task.schedule_type), "rt": task.reminder_time}
+                   "stype": str(task.schedule_type),
+                   "lead": task.notify_before_min, "dtime": task.deadline_time}
         if task.schedule_type == "once":
             if task.deadline:
                 d["deadline"] = task.deadline

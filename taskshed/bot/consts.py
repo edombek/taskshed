@@ -31,9 +31,6 @@ WD_KEYS = ["wd_mo", "wd_tu", "wd_we", "wd_th", "wd_fr", "wd_sa", "wd_su"]
 # message, so the 09:00 default reminder gets a ⏎ button instead)
 TM_PRESETS = [[("08:00", "tm:08:00"), ("12:00", "tm:12:00"), ("15:00", "tm:15:00")],
               [("18:00", "tm:18:00"), ("21:00", "tm:21:00"), ("23:59", "tm:23:59")]]
-REMINDER_TMS = [[("⏎ 09:00", "tm:09:00")],
-                [("08:00", "tm:08:00"), ("12:00", "tm:12:00")],
-                [("18:00", "tm:18:00"), ("21:00", "tm:21:00")]]
 
 
 # URLs are defanged in user-supplied strings (task titles, place names):

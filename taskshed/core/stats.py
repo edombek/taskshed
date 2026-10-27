@@ -82,8 +82,8 @@ def trend(occs: list[tuple[TaskOccurrence, Task]], tz: str) -> list[tuple[date, 
 
 
 def occurrence_moment(occ: TaskOccurrence) -> datetime:
-    """The hour a repeat really belongs to: start of work, else reminder time."""
-    return occ.start_at or occ.reminder_at or occ.due_at
+    """The hour a repeat really belongs to: start of work, else its deadline."""
+    return occ.start_at or occ.due_at
 
 
 # a work window longer than this is drawn only by its boundaries, so a task

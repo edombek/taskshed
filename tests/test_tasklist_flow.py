@@ -1,4 +1,4 @@
-"""Today's task list and its action buttons (snooze, skip, в работе)."""
+"""The task notice and its buttons: done, skip, в работе, «уведомить позже»."""
 
 from datetime import UTC, datetime, time, timedelta
 
@@ -8,24 +8,27 @@ from taskshed.core.models import ScheduleType
 from taskshed.messaging.base import RawEvent
 
 
-class TestSnoozePicker:
-    """⏭ Отложить must ask *how long* instead of picking a fixed hour."""
+async def _daily_task(env, title="T", clock=time(9, 0), lead=60):
+    """One place «Дом», current, with an every-day repeat due today."""
+    _, store, _ = env
+    await send(env, "Дом")
+    user = await store.get_user_by_account("telegram", PID)
+    p = (await store.list_places(user.id))[0]
+    await store.set_location(user.id, p.id)
+    anchor = datetime.now(UTC).date().isoformat()
+    task = await store.create_task(user.id, p.id, title, ScheduleType.EVERY_N_DAYS,
+                                   {"n": 1, "anchor": anchor}, clock,
+                                   notify_before_min=lead)
+    await store.materialize_occurrences(task, datetime.now(UTC).date(), 1)
+    occs = await store.occurrences_today(user.id, datetime.now(UTC).date())
+    return store, occs[0][0].id
 
-    async def _occ(self, env):
-        _, store, _ = env
-        await send(env, "Дом")
-        user = await store.get_user_by_account("telegram", PID)
-        p = (await store.list_places(user.id))[0]
-        await store.set_location(user.id, p.id)
-        anchor = datetime.now(UTC).date().isoformat()
-        task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
-                                       {"n": 1, "anchor": anchor}, time(0, 0))
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
-        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
-        return store, occs[0][0].id
+
+class TestSnoozePicker:
+    """💤 «Уведомить позже» must ask *how long*, not pick a fixed hour."""
 
     async def test_picker_offers_durations(self, env):
-        _, occ_id = await self._occ(env)
+        _, occ_id = await _daily_task(env)
         f = await send(env, cb=f"snooze:{occ_id}")
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert f"snz:{occ_id}:15" in flat
@@ -33,12 +36,12 @@ class TestSnoozePicker:
         # the picker itself is the interactive reply: no menu spam below it
         assert len(f.sent) == 1
 
-    async def test_choice_snoozes_by_requested_minutes(self, env):
-        store, occ_id = await self._occ(env)
-        before = (await store.get_occurrence(occ_id))[0].reminder_at
+    async def test_choice_moves_the_notice_moment(self, env):
+        store, occ_id = await _daily_task(env)
+        before = (await store.get_occurrence(occ_id))[0].notify_at
         f = await send(env, cb=f"snz:{occ_id}:15")
         assert any("15 мин" in t for t in f.texts())
-        after = (await store.get_occurrence(occ_id))[0].reminder_at
+        after = (await store.get_occurrence(occ_id))[0].notify_at
         assert after > before + timedelta(minutes=14)
         # after a *completed* action the menu follow-up returns
         flat = [cb for row in f.last_buttons() for _, cb in row]
@@ -46,21 +49,8 @@ class TestSnoozePicker:
 
 
 class TestSkipOccurrence:
-    async def _occ(self, env):
-        _, store, _ = env
-        await send(env, "Дом")
-        user = await store.get_user_by_account("telegram", PID)
-        p = (await store.list_places(user.id))[0]
-        await store.set_location(user.id, p.id)
-        anchor = datetime.now(UTC).date().isoformat()
-        task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
-                                       {"n": 1, "anchor": anchor}, time(9, 0))
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
-        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
-        return store, occs[0][0].id
-
     async def test_skip_closes_occurrence_without_missed(self, env):
-        store, occ_id = await self._occ(env)
+        store, occ_id = await _daily_task(env)
         f = await send(env, "/задачи")
         flat = [cb for row in prev_buttons(f) for _, cb in row]
         assert f"skip:{occ_id}" in flat
@@ -69,14 +59,13 @@ class TestSkipOccurrence:
         occ, _ = await store.get_occurrence(occ_id)
         assert occ.status == "skipped"
         # gone from today's list, and the background overdue pass ignores it
-        assert not await store.occurrences_today(
-            (await store.get_user_by_account("telegram", PID)).id,
-            datetime.now(UTC).date(), "UTC")
+        user = await store.get_user_by_account("telegram", PID)
+        assert not await store.occurrences_today(user.id, datetime.now(UTC).date())
         await store.mark_overdue(datetime.now(UTC) + timedelta(days=1))
         assert (await store.get_occurrence(occ_id))[0].status == "skipped"
 
     async def test_skipped_shows_in_stats_not_as_missed(self, env):
-        store, occ_id = await self._occ(env)
+        store, occ_id = await _daily_task(env)
         await send(env, cb=f"skip:{occ_id}")
         f = await send(env, "/статистика всё")
         assert "пропущено 1" in f.texts()[-1]
@@ -84,7 +73,7 @@ class TestSkipOccurrence:
 
 
 class TestWorkInProgress:
-    """One-off tasks have a work window and a «▶ В работе» button."""
+    """A one-off with a work window offers «▶ В работе» and stays open."""
 
     async def _stretched_task(self, env):
         app, store, fake = env
@@ -96,12 +85,12 @@ class TestWorkInProgress:
             deadline=datetime.now(UTC) - timedelta(hours=1),
             start_at=datetime.now(UTC) - timedelta(hours=3),
         )
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 3, "UTC")
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 3)
         await store.set_location(user.id, pid)
         return app, store, task
 
     async def test_list_offers_wip_and_shows_the_window(self, env):
-        app, store, task = await self._stretched_task(env)
+        await self._stretched_task(env)
         f = await send(env, "/задачи")
         assert any("с " in m and " до " in m for m in f.texts())
         flat = [cb for row in prev_buttons(f) for _, cb in row]
@@ -109,7 +98,7 @@ class TestWorkInProgress:
         assert any(cb.startswith("done:") for cb in flat)
 
     async def test_wip_keeps_the_row_open_and_drops_itself(self, env):
-        app, store, _ = await self._stretched_task(env)
+        _, store, _ = await self._stretched_task(env)
         f = await send(env, "/задачи")
         occ_id = next(int(cb.split(":")[1]) for row in prev_buttons(f)
                       for _, cb in row if cb.startswith("wip:"))
@@ -124,20 +113,16 @@ class TestWorkInProgress:
         assert not any(cb.startswith("snooze:") for cb in flat)
         assert f"done:{occ_id}" in flat and f"skip:{occ_id}" in flat
 
-    async def test_digest_offers_wip_too(self, env):
-        app, store, _ = await self._stretched_task(env)
-        await store.set_location((await store.get_user_by_account("telegram", PID)).id,
-                                 await place_id_of(store, (await store.get_user_by_account(
-                                     "telegram", PID)).id, "Дом"))
-        settings = await store.get_settings((await store.get_user_by_account(
-            "telegram", PID)).id)
-        place = (await store.get_location((await store.get_user_by_account(
-            "telegram", PID)).id))[0]
-        digest = await app.build_digest(
-            (await store.get_user_by_account("telegram", PID)).id, settings, place)
-        assert digest and any(cb.startswith("wip:")
-                              for _, _, rows in digest[1] for row in rows
-                              for _, cb in row)
+    async def test_notice_offers_wip_too(self, env):
+        app, store, _task = await self._stretched_task(env)
+        fake = env[2]
+        user = await store.get_user_by_account("telegram", PID)
+        settings = await store.get_settings(user.id)
+        place = (await store.get_location(user.id))[0]
+        rows = await store.rows_to_announce(user.id)
+        assert rows and await app.send_notification(user.id, settings, place, rows)
+        assert any(any(cb.startswith("wip:") for _, cb in row)
+                   for m in fake.sent for row in m.buttons)
 
 
 class TestOneMessagePerTask:
@@ -155,8 +140,7 @@ class TestOneMessagePerTask:
             task = await store.create_task(user.id, p.id, title,
                                            ScheduleType.EVERY_N_DAYS,
                                            {"n": 1, "anchor": anchor}, time(9, 0))
-            await store.materialize_occurrences(task, datetime.now(UTC).date(),
-                                                1, "UTC")
+            await store.materialize_occurrences(task, datetime.now(UTC).date(), 1)
         await send(env, "/задачи")
         assert fake.sent[0].buttons == []  # header: a plain text message
         return fake.sent[1], fake.sent[2]  # the two task messages
@@ -211,27 +195,37 @@ class TestOneMessagePerTask:
         assert a.buttons  # the untouched original keeps its keyboard
 
 
-class TestDigestPerTask:
-    async def test_digest_is_a_header_plus_one_message_per_task(self, env):
+class TestNoticeScreen:
+    """The notice: header, one message per task, and a «Готово» to end the round."""
+
+    async def _two_tasks(self, env, titles=("A", "B")):
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
         pid = await place_id_of(store, user.id, "Дом")
         await store.set_location(user.id, pid)
         anchor = datetime.now(UTC).date().isoformat()
-        for title in ("A", "B"):
+        for title in titles:
             task = await store.create_task(user.id, pid, title,
                                            ScheduleType.EVERY_N_DAYS,
-                                           {"n": 1, "anchor": anchor}, time(9, 0))
-            await store.materialize_occurrences(task, datetime.now(UTC).date(),
-                                                1, "UTC")
-        acc = (await store.get_accounts(user.id))[0]
+                                           {"n": 1, "anchor": anchor}, time(9, 0),
+                                           notify_before_min=120)
+            await store.materialize_occurrences(task, datetime.now(UTC).date(), 1)
+        return app, store, fake
+
+    async def test_notice_is_a_header_plus_task_messages_plus_done(self, env):
+        app, store, fake = await self._two_tasks(env)
+        user = await store.get_user_by_account("telegram", PID)
+        settings = await store.get_settings(user.id)
+        place = (await store.get_location(user.id))[0]
+        rows = await store.rows_to_announce(settings.user_id)
         base = len(fake.sent)
-        assert await app._digest_now(user.id, acc)
-        assert "Задачи" in fake.sent[base].text
-        assert fake.sent[base].buttons == []
-        assert len(fake.sent) == base + 3  # header + two task messages
-        msg = fake.sent[-1]
+        assert await app.send_notification(settings.user_id, settings, place, rows)
+        sent = fake.sent[base:]
+        assert sent[0].buttons == [] and "«Дом»" in sent[0].text
+        assert len(sent) == 4            # header + two tasks + «Готово»
+        assert any(cb == "fin:" for _, cb in sent[-1].buttons[-1])
+        msg = sent[1]
         occ_id = next(int(cb.split(":")[1]) for row in msg.buttons
                       for _, cb in row if cb.startswith("done:"))
         before = len(fake.sent)
@@ -239,3 +233,17 @@ class TestDigestPerTask:
                                   message_id=msg.id))
         assert len(fake.sent) == before  # the task message absorbed the tap
         assert "✅" in msg.text and msg.buttons == []
+
+    async def test_finish_ends_the_round_with_no_extra_taps(self, env):
+        app, store, fake = await self._two_tasks(env)
+        user = await store.get_user_by_account("telegram", PID)
+        settings = await store.get_settings(user.id)
+        place = (await store.get_location(user.id))[0]
+        rows = await store.rows_to_announce(user.id)
+        assert await app.send_notification(user.id, settings, place, rows)
+        fin = next(m for m in fake.sent
+                   if any(cb == "fin:" for row in m.buttons for _, cb in row))
+        f = await send(env, cb="fin:", msg=fin.id)
+        assert any(any(cb.startswith("cmd:") for row in m.buttons for _, cb in row)
+                   for m in f.sent)
+        assert not app._fin_msgs         # the screen is closed

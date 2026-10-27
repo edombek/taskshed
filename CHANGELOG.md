@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Every task kind has a deadline and a warning lead.** Four kinds — one-off,
+  every N days, by weekdays, every M of the month — all end with the same two
+  answers: the deadline (a moment for a one-off, a `deadline_time` clock on each
+  repeat day for the rest) and `notify_before_min`, "warn me this long before"
+  (buttons from 5 minutes to a week, or typed: `30`, `2 часа`, `за 3 дня`).
+  The per-task reminder clock (`reminder_time`) and the «без срока»/«сейчас»
+  steps are gone.
+- **Deadlines are the user's wall-clock, not the host's.** `tasks.deadline`,
+  `tasks.start_at` and `tasks.deadline_time` are stored as naive wall-clock on
+  the owner's calendar; the store resolves them through that user's current
+  timezone on every read, and occurrence rows
+  (`task_occurrences.due_at`/`notify_at = due_at − lead`) are real UTC instants
+  derived from them. Changing a user's `tz` re-derives their whole open future
+  (`Store.replan_open_occurrences`) while finished history is left alone.
+  `alembic upgrade head` converts existing rows (old `reminder_at` →
+  `notify_at`, plan columns shifted into the owner's wall-clock).
+- **Two reminder triggers replace the times list**: a **morning digest** at
+  `settings.morning_time` (once per calendar day) covering every open repeat
+  whose deadline is today or ahead and whose notice moment is today or already
+  passed, and an **every-`nag_interval_min` repeat** for open rows sitting
+  inside `[notify_at, due_at)`; 💤 «Уведомить позже» pushes just that row's
+  `notify_at` out. `remind_mode`/`remind_times`/`remind_interval_min`/
+  `last_reminded_at` are replaced by `morning_time`, `nag_interval_min`,
+  `last_morning_at` and `last_notified_at`.
+- **A notice is built for the current place**: its tasks arrive as separate
+  messages with buttons, the other places come as one brief line-up, and a
+  single ✅ «Готово» (`fin:`) ends the status round and hands the main menu back.
+- Settings screen: «🌅 Утреннее уведомление» and «🔁 Повторять каждые (мин)»
+  replace the mode picker; the card of a task now shows «🕓 срок — HH:MM» and
+  «🔔 предупреждать за …», and the editor edits the deadline clock and the lead.
+
 - **One task, one message**: `/задачи` and reminder digests send a plain header
   plus a message per task owning its occurrence. Tapping ✅/⏭ re-renders that
   very message (mark on, keyboard off); ▶ leaves just [✅][⏭]; 💤 shows the

@@ -7,36 +7,35 @@ sequenceDiagram
 
     Sch->>Core: mark_overdue(now): pending past due → missed<br/>(in_progress work stays open)
     loop per user (in user tz)
-        Core->>Core: reminders_on? materialize horizon,<br/>trigger reached (times/interval<br/>or any occurrence reminder_at)? quiet hours?
-        alt no trigger / quiet / reminders off
-            Core-->>Sch: silent
-        end
-        Core->>Core: occurrences due today (any place)
-        alt none
+        Core->>Core: reminders_on? materialize the horizon,<br/>quiet hours?
+        Note over Core: plans are the user's wall-clock (deadline,<br/>deadline_time) — every instant is re-derived<br/>through their current tz
+        Core->>Core: rows_to_announce = open repeats with<br/>due_at ≥ start of today and notify_at ≤ end of today<br/>(notify_at = due_at − notify_before_min)
+        alt nothing to announce (any place)
             Core-->>Sch: silent (no message at all)
+        end
+        Core->>Core: morning digest due? (morning_time reached,<br/>not yet sent this calendar day)<br/>repeat due? ≥ nag_interval_min since last_notified_at<br/>for rows inside [notify_at, due_at)
+        alt neither trigger
+            Core-->>Sch: silent
         end
         Core->>Core: current_location fresh? (set_at + ttl > now)
         alt stale or unset
-            Core->>Msg: "Where are you now?" + place buttons<br/>+ «Not now» (once: pending_reminder=true, last_reminded_at=now)
+            Core->>Msg: "Where are you now?" + place buttons<br/>+ «Not now» (once: pending_reminder=true)
             Msg->>U: 📍 Где вы сейчас? [Дом] [Работа] … [⏭ Не сейчас]
             Core->>Core: whatever dialog is in progress (wizard, list intent)<br/>is parked — the question is modal
             U->>Msg: tap "place:42" (or type a place name)
             Msg->>Core: set location, pending_reminder=false
-            Core->>Msg: the parked dialog is replayed, then the digest follows
+            Core->>Msg: the parked dialog is replayed, then the notice follows
         else fresh
-            Core->>Core: digest = today's occurrences at that place
-            alt empty
-                Core-->>Sch: silent
-            end
+            Core->>Core: notice = tasks of the current place in full,<br/>tasks of other places in brief
         end
-        Core->>Msg: digest header + one message per task<br/>(older keyboards of this chat get disarmed)
-        Msg->>U: 📋 Задачи «Работа» на сегодня:<br/>📌 Отчёт — до 18:00 [✅][▶][💤][⏭]<br/>📌 Полка — с 26.10 09:00 до 30.10 18:00 [✅][▶][💤][⏭]<br/>📌 Созвон — до 12:00 ⚠️просрочено [✅][▶][💤][⏭]
+        Core->>Msg: notice header + one message per task of this place<br/>+ one brief line-up for the others + «Готово»<br/>(older keyboards of this chat get disarmed)
+        Msg->>U: 🌅 Доброе утро. Задачи «Работа» на сегодня:<br/>📌 Отчёт — до 18:00 [✅ Готово][⏭ Пропустить][💤 Позже][▶ В работе]<br/>📌 Созвон — до 12:00 ⚠️просрочено [✅][⏭][💤][▶]<br/>📍 Другие места: • Дом: Полить цветы — до 20:00<br/>✅ Готово
     end
     U->>Msg: "done:42" button on a task's own message
     Msg->>Core: ownership check → status=done + completions row
     Core->>Msg: the very task message is re-rendered: ✅ mark,<br/>keyboard gone — no confirmation, no menu, no chat spam
-    U->>Msg: "wip:42" → the message now reads «▶ в работе»,<br/>keyboard becomes [✅][⏭]; the task is never marked missed
+    U->>Msg: "wip:42" → the message now reads «▶ в работе»,<br/>keyboard becomes [✅][⏭] — and the task is never marked missed
     U->>Msg: "snooze:42" → the same message shows duration buttons<br/>[15м][1ч][4ч][+сутки][⬅️]
-    U->>Msg: "snz:42:60" → note «💤 Напомню через 60 мин», buttons return
+    U->>Msg: "snz:42:60" → the notice moment of this row moves out by an hour,<br/>the every-T repeat picks the task up again after that
     U->>Msg: "skip:42" → status=skipped: «⏭пропущено»,<br/>keyboard off, never flipped to missed, no penalty in stats
-    Msg->>U: after any completed command outside a task message:<br/>"Хотите сделать что-нибудь ещё?" + command menu
+    U->>Msg: "fin:" under the notice → the status round ends,<br/>the main menu returns and every keyboard of the notice is disarmed

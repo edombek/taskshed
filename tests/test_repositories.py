@@ -18,8 +18,8 @@ async def store():
     await st._engine.dispose()
 
 
-async def make_user(store, places=("Дом", "Работа")):
-    user, _ = await store.register_account("telegram", "111", language="ru", tz="Europe/Moscow")
+async def make_user(store, places=("Дом", "Работа"), tz="Europe/Moscow"):
+    user, _ = await store.register_account("telegram", "111", language="ru", tz=tz)
     for p in places:
         await store.add_place(user.id, p)
     return user
@@ -49,13 +49,13 @@ class TestTasksAndOccurrences:
             user.id, work.id, "Отчёт", ScheduleType.EVERY_N_DAYS,
             {"n": 1, "anchor": "2026-10-25"}, time(9, 0),
         )
-        n = await store.materialize_occurrences(task, date(2026, 10, 25), 2, "Europe/Moscow")
+        n = await store.materialize_occurrences(task, date(2026, 10, 25), 2)
         assert n == 3
         # idempotent
-        again = await store.materialize_occurrences(task, date(2026, 10, 25), 2, "Europe/Moscow")
+        again = await store.materialize_occurrences(task, date(2026, 10, 25), 2)
         assert again == 0
 
-        found = await store.occurrences_today(user.id, date(2026, 10, 26), "Europe/Moscow")
+        found = await store.occurrences_today(user.id, date(2026, 10, 26))
         # today's occurrence + yesterday's still-pending one (overdue keeps showing)
         assert len(found) == 2
         occ, t = found[-1]
@@ -64,32 +64,32 @@ class TestTasksAndOccurrences:
         # filtered by place with no tasks there
         home = next(p for p in places if p.name == "Дом")
         assert await store.occurrences_today(user.id, date(2026, 10, 26),
-                                             "Europe/Moscow", place_id=home.id) == []
+                                             place_id=home.id) == []
 
     async def test_done_and_completion(self, store):
         user = await make_user(store)
         work = (await store.list_places(user.id))[1]
         task = await store.create_task(user.id, work.id, "T", ScheduleType.EVERY_N_DAYS,
                                        {"n": 1, "anchor": "2026-10-25"}, time(9, 0))
-        await store.materialize_occurrences(task, date(2026, 10, 25), 0, "Europe/Moscow")
-        occ, _ = (await store.occurrences_today(user.id, date(2026, 10, 25), "Europe/Moscow"))[0]
+        await store.materialize_occurrences(task, date(2026, 10, 25), 0)
+        occ, _ = (await store.occurrences_today(user.id, date(2026, 10, 25)))[0]
         assert await store.mark_done(occ.id, "telegram") is True
         assert await store.mark_done(occ.id, "telegram") is False  # already done
-        assert await store.occurrences_today(user.id, date(2026, 10, 25), "Europe/Moscow") == []
+        assert await store.occurrences_today(user.id, date(2026, 10, 25)) == []
 
     async def test_overdue_and_snooze(self, store):
-        user = await make_user(store)
+        user = await make_user(store, tz="UTC")
         work = (await store.list_places(user.id))[1]
         past = datetime.now(UTC) - timedelta(hours=1)
         task = await store.create_task(user.id, work.id, "T", ScheduleType.ONCE, {},
                                        time(9, 0), deadline=past)
-        await store.materialize_occurrences(task, past.date(), 0, "UTC")
+        await store.materialize_occurrences(task, past.date(), 0)
         # query by the day the occurrence is actually due on: `past` may
         # fall on the previous UTC day when the suite runs just after midnight
-        occs = await store.occurrences_today(user.id, past.date(), "UTC")
+        occs = await store.occurrences_today(user.id, past.date())
         assert occs and occs[0][0].status == "pending"
         assert await store.mark_overdue(datetime.now(UTC)) == 1
-        occs = await store.occurrences_today(user.id, past.date(), "UTC")
+        occs = await store.occurrences_today(user.id, past.date())
         assert occs[0][0].status == "missed"
         assert await store.snooze(occs[0][0].id, 60) is True
         # snoozed beyond "now" — nothing overdue anymore
@@ -97,21 +97,21 @@ class TestTasksAndOccurrences:
 
 
     async def test_in_progress_survives_the_overdue_pass(self, store):
-        user = await make_user(store)
+        user = await make_user(store, tz="UTC")
         work = (await store.list_places(user.id))[1]
         past = datetime.now(UTC) - timedelta(hours=1)
         task = await store.create_task(user.id, work.id, "T", ScheduleType.ONCE, {},
                                        time(9, 0), deadline=past)
-        await store.materialize_occurrences(task, past.date(), 0, "UTC")
-        occ, _ = (await store.occurrences_today(user.id, past.date(), "UTC"))[0]
+        await store.materialize_occurrences(task, past.date(), 0)
+        occ, _ = (await store.occurrences_today(user.id, past.date()))[0]
         assert await store.start_work(occ.id) is True
         assert await store.start_work(occ.id) is False  # already started
         # work in progress is never punished as missed
         assert await store.mark_overdue(datetime.now(UTC)) == 0
-        occs = await store.occurrences_today(user.id, past.date(), "UTC")
+        occs = await store.occurrences_today(user.id, past.date())
         assert occs and occs[0][0].status == "in_progress"
         assert await store.mark_done(occ.id, "telegram") is True
-        assert await store.occurrences_today(user.id, past.date(), "UTC") == []
+        assert await store.occurrences_today(user.id, past.date()) == []
 
     async def test_stretched_task_shows_from_its_start_day(self, store):
         user = await make_user(store)
@@ -122,15 +122,14 @@ class TestTasksAndOccurrences:
         task = await store.create_task(user.id, work.id, "Полка", ScheduleType.ONCE,
                                        {}, time(9, 0), deadline=due, start_at=start)
         assert await store.materialize_occurrences(
-            task, date(2026, 10, 26), 10, "Europe/Moscow") == 1
-        occ, _ = (await store.occurrences_today(user.id, date(2026, 10, 26),
-                                                "Europe/Moscow"))[0]
+            task, date(2026, 10, 26), 10) == 1
+        occ, _ = (await store.occurrences_today(user.id, date(2026, 10, 26)))[0]
         assert occ.start_at == start.astimezone(UTC)
         assert occ.status == "pending"
         # inside the work window the row keeps showing up day after day
-        assert await store.occurrences_today(user.id, date(2026, 10, 28), "Europe/Moscow")
+        assert await store.occurrences_today(user.id, date(2026, 10, 28))
         # before the work window opens it stays out of the way
-        assert await store.occurrences_today(user.id, date(2026, 10, 25), "Europe/Moscow") == []
+        assert await store.occurrences_today(user.id, date(2026, 10, 25)) == []
 
 class TestTaskEditing:
     async def test_save_task_roundtrip(self, store):
@@ -143,14 +142,15 @@ class TestTaskEditing:
         task = await store.create_task(user.id, home.id, "T", ScheduleType.ONCE,
                                        {}, time(9, 0), deadline=due, start_at=start)
         task.title, task.place_id = "Полка", work.id
-        task.reminder_time = time(11, 15)
+        task.deadline_time = time(11, 15)
+        task.notify_before_min = 90
         task.start_at = start + timedelta(hours=2)
         task.deadline = due + timedelta(days=1)
         assert await store.save_task(task)
         got = await store.get_task(user.id, task.id)
         assert got.title == "Полка" and got.place_id == work.id
-        assert got.reminder_time == time(11, 15)
-        # stored naive-UTC, handed back tz-aware
+        assert got.deadline_time == time(11, 15) and got.notify_before_min == 90
+        # the plan is stored as the user's wall-clock and read back through it
         assert got.start_at == start.astimezone(UTC) + timedelta(hours=2)
         assert got.deadline == (due + timedelta(days=1)).astimezone(UTC)
         vk_user, _ = await store.register_account("vk", "999")
@@ -176,8 +176,7 @@ class TestTaskEditing:
         work = (await store.list_places(user.id))[1]
         task = await store.create_task(user.id, work.id, "T", ScheduleType.EVERY_N_DAYS,
                                        {"n": 1, "anchor": "2026-10-25"}, time(9, 0))
-        assert await store.materialize_occurrences(task, date(2026, 10, 25), 2,
-                                                   "Europe/Moscow") == 3
+        assert await store.materialize_occurrences(task, date(2026, 10, 25), 2) == 3
         occs = await store.occurrences_in_range(
             user.id, datetime(2026, 10, 25, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC))
         await store.mark_done(occs[0][0].id, "telegram")
@@ -194,7 +193,7 @@ class TestTaskEditing:
         work = (await store.list_places(user.id))[1]
         task = await store.create_task(user.id, work.id, "T", ScheduleType.EVERY_N_DAYS,
                                        {"n": 1, "anchor": "2026-10-25"}, time(9, 0))
-        await store.materialize_occurrences(task, date(2026, 10, 25), 1, "Europe/Moscow")
+        await store.materialize_occurrences(task, date(2026, 10, 25), 1)
         occs = await store.occurrences_in_range(
             user.id, datetime(2026, 10, 25, tzinfo=UTC), datetime(2026, 10, 27, tzinfo=UTC))
         await store.mark_done(occs[0][0].id, "telegram")
@@ -204,6 +203,68 @@ class TestTaskEditing:
                 left = (await conn.execute(
                     text(f"SELECT COUNT(*) FROM {table}"))).scalar()
                 assert left == 0, f"{table} left {left} rows after deleting the task"
+
+
+class TestWallClockPlans:
+    """A deadline is the user's clock; the instant is re-derived per zone."""
+
+    async def _weekly(self, store, user, work_id):
+        task = await store.create_task(
+            user.id, work_id, "Отчёт", ScheduleType.WEEKDAYS, {"weekdays": [3]},
+            deadline_time=time(18, 0), notify_before_min=120)
+        assert await store.materialize_occurrences(task, date(2026, 10, 26), 7) == 1
+        return task
+
+    async def test_deadline_and_notice_follow_the_users_clock(self, store):
+        user = await make_user(store)                     # Europe/Moscow
+        work = (await store.list_places(user.id))[1]
+        await self._weekly(store, user, work.id)
+        occs = await store.occurrences_in_range(
+            user.id, datetime(2026, 10, 26, tzinfo=UTC),
+            datetime(2026, 11, 3, tzinfo=UTC))
+        msk = ZoneInfo("Europe/Moscow")
+        occ = occs[0][0]
+        # 29.10 is the Thursday inside the horizon: 18:00 on the user's watch
+        assert occ.due_at.astimezone(msk).strftime("%d.%m %H:%M") == "29.10 18:00"
+        assert occ.notify_at.astimezone(msk).strftime("%d.%m %H:%M") == "29.10 16:00"
+
+    async def test_moving_the_timezone_replans_the_open_future(self, store):
+        user = await make_user(store)
+        work = (await store.list_places(user.id))[1]
+        await self._weekly(store, user, work.id)
+        before = (await store.occurrences_in_range(
+            user.id, datetime(2026, 10, 26, tzinfo=UTC),
+            datetime(2026, 11, 3, tzinfo=UTC)))[0][0]
+        assert before.due_at == datetime(2026, 10, 29, 15, 0, tzinfo=UTC)  # 18:00 MSK
+        # history is not rewritten, only the open future is re-derived
+        await store.update_settings(user.id, tz="Europe/London")
+        assert await store.replan_open_occurrences(user.id, date(2026, 10, 26), 7) == 1
+        after = (await store.occurrences_in_range(
+            user.id, datetime(2026, 10, 26, tzinfo=UTC),
+            datetime(2026, 11, 3, tzinfo=UTC)))[0][0]
+        london = ZoneInfo("Europe/London")
+        assert after.due_at.astimezone(london).strftime("%d.%m %H:%M") == "29.10 18:00"
+        assert after.due_at != before.due_at      # another real moment, same clock
+        assert after.notify_at.astimezone(london).strftime("%H:%M") == "16:00"
+
+    async def test_announce_set_and_notice_window(self, store):
+        user = await make_user(store, tz="UTC")
+        home = (await store.list_places(user.id))[0]
+        now = datetime.now(UTC)
+        # notice opened an hour ago (lead 3h), deadline in two hours: today's news
+        overdue_notice = await store.create_task(
+            user.id, home.id, "Полить", ScheduleType.ONCE, {},
+            notify_before_min=180, deadline=now + timedelta(hours=2))
+        # notice only opens tomorrow: not today's news
+        later = await store.create_task(
+            user.id, home.id, "Позже", ScheduleType.ONCE, {},
+            notify_before_min=30, deadline=now + timedelta(days=2))
+        for task in (overdue_notice, later):
+            await store.materialize_occurrences(task, now.date(), 7)
+        announced = {t.title for _, t in await store.rows_to_announce(user.id)}
+        assert announced == {"Полить"}
+        assert {t.title for _, t in await store.rows_in_window(user.id, now)} == {"Полить"}
+        assert not await store.rows_in_window(user.id, now - timedelta(hours=2))
 
 
 class TestLocation:

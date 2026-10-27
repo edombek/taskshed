@@ -37,9 +37,8 @@ erDiagram
     user_settings {
         int user_id PK "also FK to users"
         bool reminders_on
-        string remind_mode "times|interval"
-        json remind_times "HH:MM list, user tz"
-        int remind_interval_min
+        string morning_time "HH:MM, user wall-clock: the daily digest"
+        int nag_interval_min "repeat for tasks inside the notice window"
         string quiet_start "HH:MM"
         string quiet_end "HH:MM"
         int location_ttl_hours
@@ -47,7 +46,8 @@ erDiagram
         string notify_platforms "all|primary"
         string stats_format "both|text|image"
         int stats_horizon_days "chart lookahead, default 7"
-        datetime last_reminded_at "nullable"
+        datetime last_morning_at "nullable, UTC"
+        datetime last_notified_at "nullable, UTC"
         bool pending_reminder "digest awaiting location answer"
     }
     tasks {
@@ -56,19 +56,20 @@ erDiagram
         int place_id FK
         string title
         text note
-        datetime deadline "ready-by moment, nullable"
-        datetime start_at "work begins (once tasks), nullable"
+        datetime deadline "wall-clock plan in the user tz, nullable"
+        datetime start_at "work begins (once tasks), wall-clock, nullable"
         string schedule_type "once|every_n_days|weekdays|monthly_day"
         json schedule_data
-        string reminder_time "HH:MM user tz"
+        string deadline_time "HH:MM clock of the deadline on repeat days"
+        int notify_before_min "warn this many minutes before the deadline"
         bool is_active
         datetime created_at
     }
     task_occurrences {
         int id PK
         int task_id FK "UNIQUE(task_id, due_at)"
-        datetime due_at "deadline of this repeat, UTC"
-        datetime reminder_at "when the reminder may fire"
+        datetime due_at "deadline of this repeat, UTC instant"
+        datetime notify_at "due_at minus the task lead, UTC instant"
         datetime start_at "work window opens (once tasks), nullable"
         string status "pending|in_progress|done|missed|skipped"
     }

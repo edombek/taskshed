@@ -15,7 +15,7 @@ T0 = datetime(2026, 10, 1, tzinfo=UTC)
 def mk(task_id, day, status):
     occ = TaskOccurrence(id=task_id * 100 + day, task_id=task_id,
                          due_at=T0 + timedelta(days=day),
-                         reminder_at=T0, status=OccurrenceStatus(status))
+                         notify_at=T0, status=OccurrenceStatus(status))
     task = Task(id=task_id, user_id=1, place_id=1 if task_id == 1 else 2,
                 title=f"T{task_id}")
     return occ, task
@@ -132,7 +132,7 @@ class TestCharts:
         from taskshed.core.stats import activity_by_hour
 
         def window(start, due, status="pending"):
-            occ = TaskOccurrence(id=1, task_id=1, due_at=due, reminder_at=start,
+            occ = TaskOccurrence(id=1, task_id=1, due_at=due, notify_at=start,
                                  start_at=start, status=OccurrenceStatus(status))
             return occ, Task(id=1, user_id=1, place_id=1, title="T")
 
@@ -155,7 +155,7 @@ class TestCharts:
 
         start = datetime(2026, 10, 26, 13, 15, tzinfo=UTC)
         occ = TaskOccurrence(id=1, task_id=1, due_at=datetime(
-            2026, 10, 26, 23, 59, tzinfo=UTC), reminder_at=start,
+            2026, 10, 26, 23, 59, tzinfo=UTC), notify_at=start,
             start_at=start, status=OccurrenceStatus.PENDING)
         task = Task(id=1, user_id=1, place_id=1, title="T",
                     schedule_type=ScheduleType.ONCE, start_at=start, deadline=None)
@@ -169,7 +169,7 @@ class TestCharts:
     def test_per_day_marks_the_day_work_starts(self):
         occ = TaskOccurrence(id=1, task_id=1,
                              due_at=datetime(2026, 10, 27, 18, 0, tzinfo=UTC),
-                             reminder_at=datetime(2026, 10, 26, 9, 0, tzinfo=UTC),
+                             notify_at=datetime(2026, 10, 26, 9, 0, tzinfo=UTC),
                              start_at=datetime(2026, 10, 26, 9, 0, tzinfo=UTC),
                              status=OccurrenceStatus.IN_PROGRESS)
         days = per_day([(occ, Task(id=1, user_id=1, place_id=1, title="T"))], "UTC")
@@ -226,22 +226,23 @@ class TestCharts:
         from taskshed.core.stats import activity_by_hour
 
         def at(day, hour, status, start=None):
+            """A repeat due at HH:30; `start` stretches the work from earlier."""
             occ = TaskOccurrence(id=day * 100 + hour, task_id=1,
-                                 due_at=datetime(2026, 10, day, 23, 59,
-                                                 tzinfo=UTC),
-                                 reminder_at=datetime(2026, 10, day, hour, 30,
-                                                      tzinfo=UTC),
+                                 due_at=datetime(2026, 10, day, hour, 30, tzinfo=UTC),
+                                 notify_at=datetime(2026, 10, day, hour, tzinfo=UTC),
                                  start_at=start, status=OccurrenceStatus(status))
             return occ, Task(id=1, user_id=1, place_id=1, title="T")
 
         occs = [at(26, 7, "done"), at(26, 7, "missed"), at(26, 9, "skipped"),
                 at(27, 20, "pending"),
-                at(28, 3, "in_progress",
+                at(28, 14, "in_progress",
                    start=datetime(2026, 10, 28, 11, 0, tzinfo=UTC))]
         grid = activity_by_hour(occs, "Europe/Moscow")
         # 07:30Z = 10:30 MSK: missed and done share the cell, like on the daily map
         assert grid[(date(2026, 10, 26), 10)] == {"done": 1, "missed": 1,
                                                   "skipped": 0, "pending": 0}
         assert grid[(date(2026, 10, 26), 12)]["skipped"] == 1  # 09:30Z
-        assert grid[(date(2026, 10, 28), 14)]["pending"] == 1  # start_at 11:00Z
+        # work stretched from 11:00Z to 14:30Z keeps its hours busy (14:00 MSK)
+        assert grid[(date(2026, 10, 28), 14)]["pending"] == 1
+        assert grid[(date(2026, 10, 28), 17)]["pending"] == 1  # the deadline hour
         assert (date(2026, 10, 27), 23) in grid               # 20:30Z planned

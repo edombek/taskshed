@@ -112,7 +112,7 @@ class TestWhereAndTasks:
                                        {"n": 1, "anchor": today.isoformat()},
                                        datetime.now(UTC).timetz().replace(second=0,
                                                                           microsecond=0))
-        await store.materialize_occurrences(task, today, 1, "UTC")
+        await store.materialize_occurrences(task, today, 1)
         await store.set_location(user.id, pid_home)
         f = await send(env, "/задачи")
         assert any("Полить цветы" in m for m in f.texts())

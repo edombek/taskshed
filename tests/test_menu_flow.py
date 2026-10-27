@@ -23,8 +23,8 @@ class TestMenuAfterCommand:
         anchor = datetime.now(UTC).date().isoformat()
         task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
                                        {"n": 1, "anchor": anchor}, time(9, 0))
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
-        occs = await store.occurrences_today(user.id, datetime.now(UTC).date(), "UTC")
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1)
+        occs = await store.occurrences_today(user.id, datetime.now(UTC).date())
         await send(env, cb=f"done:{occs[0][0].id}")
         assert fake.find("Готово")
         await self._menu_on_last(env)
@@ -39,7 +39,8 @@ class TestMenuAfterCommand:
         await send(env, cb=f"place:{pid}")
         await send(env, cb="sched:monthly_day")
         await send(env, "15")
-        await send(env, "09:00")
+        await send(env, cb="tm:09:00")             # the deadline clock
+        await send(env, cb="ln:60")                # and the warning lead
         await self._menu_on_last(env)
 
 
@@ -51,7 +52,8 @@ class TestMenuFollowUp:
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "cmd:tasks" in flat
 
-    async def test_task_list_has_menu_after_task_buttons(self, env):
+    async def test_notice_ends_with_its_own_done_button(self, env):
+        """A task notice owns the chat: it closes with «Готово», not a menu."""
         app, store, fake = env
         await send(env, "Дом")
         user = await store.get_user_by_account("telegram", PID)
@@ -60,12 +62,15 @@ class TestMenuFollowUp:
         anchor = datetime.now(UTC).date().isoformat()
         task = await store.create_task(user.id, p.id, "T", ScheduleType.EVERY_N_DAYS,
                                        {"n": 1, "anchor": anchor}, time(9, 0))
-        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1, "UTC")
+        await store.materialize_occurrences(task, datetime.now(UTC).date(), 1)
         f = await send(env, "/задачи")
         flat = [cb for row in prev_buttons(f) for _, cb in row]
         assert any(cb.startswith("done:") for cb in flat)
         flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert "cmd:task" in flat
+        assert flat == ["fin:"]
+        # «Готово» is what hands the menu back
+        f = await send(env, cb="fin:")
+        assert "cmd:task" in [cb for row in f.last_buttons() for _, cb in row]
 
 
 class TestFollowUpSuppressed:
