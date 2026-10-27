@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from functools import cache
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _DIR = Path(__file__).parent
 SUPPORTED = ("ru", "en")
@@ -26,7 +29,12 @@ def normalize(lang: str | None) -> str:
 
 def t(key: str, lang: str | None = None, **params) -> str:
     cat = _catalog(normalize(lang))
-    text = cat.get(key) or _catalog(DEFAULT_LANG).get(key) or key
+    text = cat.get(key) or _catalog(DEFAULT_LANG).get(key)
+    if text is None:
+        # a missing key used to reach the chat as a raw key ("bad"); keep the
+        # fallback crash-proof but make the hole visible in the logs
+        log.error("missing i18n key: %s", key)
+        return key
     return text.format(**params) if params else text
 
 

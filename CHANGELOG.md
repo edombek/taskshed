@@ -12,6 +12,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   variables of the process (env wins).
 
 ### Fixed
+- **Raw i18n keys could reach the chat**: an unparseable date/time answer
+  replied with the literal `bad` (a non-catalog key, the hint was swallowed
+  too). Now it answers «Не понял» + repeats the question as the hint. `t()`
+  logs missing keys, and CI now scans every static `t("…")` call in the
+  source against both catalogs, plus ru/en `{placeholder}` parity.
+- **Buttonless dead ends**: typing a new place name at the location question
+  suppressed the menu follow-up; «⏭ Не сейчас» after a bare /гдея, a tap on
+  a deleted place's button, and `/отвязать` with a single account answered
+  with silence; a rejected settings value dropped the awaited input instead
+  of re-asking the same prompt in place.
 - **The «Где вы сейчас?» question honors its own invitation**: with no places
   saved it said «add one by text», but typing a name only re-asked forever;
   now the typed name creates the place and answers the question. Unknown names

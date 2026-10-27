@@ -197,7 +197,7 @@ class TaskWizardMixin:
         """
         step = w["step"]
         if got is None:
-            return None, False, "bad"
+            return None, False, "wizard_bad_input"
         day_w, clock_w = as_day(got), as_clock(got)
         if step == "reminder":
             return ((clock_w.clock, clock_w.guessed, None) if clock_w

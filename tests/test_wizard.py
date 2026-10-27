@@ -10,7 +10,21 @@ from taskshed.messaging.base import RawEvent
 
 
 class TestTimeInput:
-    """One parser for typed moments, plus a "did I read that right?" card."""
+    """One parser for every input moment, plus a "did I read that right?" card."""
+
+    async def test_garbage_at_the_when_step_is_explained_not_echoed(self, env):
+        _, store, _ = env
+        await send(env, "Дом")
+        await send(env, "/задача")
+        await send(env, "Полка")
+        user = await store.get_user_by_account("telegram", PID)
+        home = await place_id_of(store, user.id, "Дом")
+        await send(env, cb=f"place:{home}")
+        await send(env, cb="sched:once")
+        f = await send(env, "после обеда где-то")
+        assert "Не понял" in f.texts()[0]
+        assert "Когда приступить" in f.texts()[0]  # the question repeats as hint
+        assert "bad" not in f.texts()[0]           # no raw i18n keys to the chat
 
     async def _to_until_step(self, env):
         _, store, _ = env
