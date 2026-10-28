@@ -65,18 +65,20 @@ Checklist of the implementation roadmap. EN summary in
       — walked live 2026-10-27: wizard task, `/задачи`, digest from the
       scheduler with ✅ tap (`done:2` at 15:22), stats week/month with CSV and
       chart uploads in the log
-- [x] VK: community «vk-cpp-bot» (178228638) + token with the «longpoll»
-      right — BLP via `groups.getLongPollServer` (`https://lp.vk.ru/whp/…`),
-      logged at startup 2026-10-28. The old token lacked the right; the
-      adapter's fallback to `messages.getLongPollServer` was the **legacy
-      numeric user LP** (no `client_info`/callback payloads, buttons
-      impossible) — it is still decoded for text and warned about loudly
-- [ ] VK smoke: `/старт` replies, the notice buttons, stats — over live BLP
-      (⏭ «Не сейчас» stale-copy dead end fixed on the way)
-- [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
-      — VK account is not linked yet: it is not registered in `accounts`,
-      so digests do not fan out to VK; start it by writing anything to the
-      VK bot, then `/привязать` <code> in Telegram
+- [x] VK: community «taskshed» (242594545) + token with the «longpoll» right
+      — BLP via `groups.getLongPollServer` (`lp.vk.ru/whp/…`); the community
+      is discovered at startup via `groups.getById` (no `group_id` in config).
+      War story: the first token lacked the right → legacy numeric user LP
+      (decoded for text anyway, warned at startup); keyboards needed the
+      chat-bot status (912 → text-only fallback); taps are `message_event`
+      + need `sendMessageEvent` ack; «Начать» arrives as plain text
+- [x] VK smoke over live BLP (2026-10-28): `/старт` → greeting + 7-button
+      menu, place pick, task wizard, ✅ taps land (`completed_via=vk`),
+      ⏭/«Готово»/«Все задачи» walk (double-menu bug fixed on the way)
+- [x] `/link` round-trip VK → Telegram (2026-10-28): both accounts on one
+      user (`notify_platforms=all`)
+- [ ] fan-out of one notice to both accounts (Telegram + VK) — live check
+      with the next scheduled `times`-mode notice
 
 ## Stage 8 — UX polish (from live-testing feedback) ✅
 - [x] Inline command menu buttons under `/start` and `/help`
@@ -199,7 +201,8 @@ Checklist of the implementation roadmap. EN summary in
       `notify_at = due_at − lead`.
 - [ ] Interactive walk in Telegram: wizard deadline + lead, tapping ✅/💤/⏭ and
       «Готово» inside a notice, `/настройки` morning moment / T / tz (the open
-      repeats must move with the zone).
+      repeats must move with the zone). (Half of it was walked in VK on
+      2026-10-28 — same code path, keyboard rendering aside.)
 
 ## Stage 10 — Menu walk exits, hour-map paging, all-places view ✅
 - [x] ✅ Готово on the last level of every menu walk (`menu:back` → main
