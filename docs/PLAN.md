@@ -65,19 +65,14 @@ Checklist of the implementation roadmap. EN summary in
       — walked live 2026-10-27: wizard task, `/задачи`, digest from the
       scheduler with ✅ tap (`done:2` at 15:22), stats week/month with CSV and
       chart uploads in the log
-- [x] VK: real community token + `group_id` (242594545). The token scopes
-      refuse `groups.getLongPollServer` (error 15/1133) — the adapter now
-      falls back to `messages.getLongPollServer` (returns the same `gim…`
-      server), normalizes the bare host to https, and retries instead of
-      crashing the process
-- [x] VK long poll lives: writes arrive (`vk update:` raw log), the fallback
-      stream turned out to be the **legacy numeric user LP** — no
-      `client_info`/callback payloads, so buttons can never arrive there;
-      the adapter warns about it at startup. The API base moved to
-      `api.vk.ru` (configurable). Blocked on: re-issue the community token
-      with the «longpoll» right so BLP (`groups.getLongPollServer`) works
-- [ ] VK smoke: `/старт` replies, the notice buttons, stats — awaiting the
-      re-issued token (⏭ «Не сейчас» stale-copy dead end fixed on the way)
+- [x] VK: community «vk-cpp-bot» (178228638) + token with the «longpoll»
+      right — BLP via `groups.getLongPollServer` (`https://lp.vk.ru/whp/…`),
+      logged at startup 2026-10-28. The old token lacked the right; the
+      adapter's fallback to `messages.getLongPollServer` was the **legacy
+      numeric user LP** (no `client_info`/callback payloads, buttons
+      impossible) — it is still decoded for text and warned about loudly
+- [ ] VK smoke: `/старт` replies, the notice buttons, stats — over live BLP
+      (⏭ «Не сейчас» stale-copy dead end fixed on the way)
 - [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
       — VK account is not linked yet: it is not registered in `accounts`,
       so digests do not fan out to VK; start it by writing anything to the
