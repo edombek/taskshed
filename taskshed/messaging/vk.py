@@ -114,6 +114,11 @@ class VkAdapter:
         params.update(access_token=self._token, v=API_VERSION)
         async with session.post(self._api_base + method, data=params) as resp:
             data = await resp.json()
+        if not isinstance(data, dict):
+            # VK (or whatever sits in front of it) occasionally hands back a
+            # bare list — it must not walk into the caller's .get
+            log.warning("vk api %s: unexpected payload %.200r", method, data)
+            return {}
         if "error" in data:
             log.warning("vk api %s error: %s", method, data["error"])
             return {}
