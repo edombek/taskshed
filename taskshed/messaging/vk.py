@@ -48,6 +48,9 @@ def _unwrap_payload(raw) -> str | None:
     VK hands `button_action.payload` back verbatim: JSON from build_keyboard,
     anything else (someone crafted it by hand) is passed through as text.
     """
+    if isinstance(raw, dict):  # message_event payloads arrive already decoded
+        cb = raw.get("cb")
+        return cb if isinstance(cb, str) else None
     if not isinstance(raw, str) or not raw:
         return None
     try:
@@ -96,6 +99,8 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
     if not isinstance(update, dict):
         log.debug("vk update is not an object: %.200r", update)
         return None
+    if update.get("type") == "message_event":
+        return _parse_message_event(update.get("object"))
     if update.get("type") != "message_new":
         log.debug("vk update ignored: %s", update.get("type"))
         return None
@@ -117,8 +122,10 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
         action = {}
     text = (msg.get("text") or "").strip()
     if not text and isinstance(client.get("command"), str):
-        # the VK bot catalog's «Начать» arrives as a command, not as text
-        text = client["command"].strip()
+        # the VK bot catalog's «Начать» arrives as a command, not as text;
+        # make it a real "/start" so it routes as a command and never lands
+        # as free text (a pending "where are you?" would eat it as a name)
+        text = "/start"
     callback = (_unwrap_payload(action.get("payload"))
                 if action.get("type") == "callback" else None)
     if not text and not callback:
@@ -126,6 +133,25 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
     mid = obj.get("last_message_id") or msg.get("id")
     return RawEvent(platform="vk", platform_user_id=str(peer),
                     text=text or None, callback=callback or None,
+                    message_id=str(mid) if mid else None)
+
+
+def _parse_message_event(obj) -> RawEvent | None:
+    """VK callback taps are their own update kind, not messages.
+
+    Live shape: object {user_id, peer_id, event_id, payload: {cb: …}} — the
+    payload arrives already decoded. Without handling these, button taps
+    vanish and VK shows the user a forever-spinning button.
+    """
+    if not isinstance(obj, dict):
+        return None
+    user = obj.get("user_id") or obj.get("peer_id")
+    cb = _unwrap_payload(obj.get("payload"))
+    if not user or not cb:
+        return None
+    mid = obj.get("conversation_message_id")
+    return RawEvent(platform="vk", platform_user_id=str(user),
+                    text=None, callback=cb,
                     message_id=str(mid) if mid else None)
 
 
@@ -162,7 +188,10 @@ class VkAdapter:
         if "error" in data:
             log.warning("vk api %s error: %s", method, data["error"])
             return {"error": data["error"]}
-        return data.get("response", {})
+        resp = data.get("response", {})
+        # some methods answer with a bare value (messages.send → message id);
+        # callers may always assume a mapping
+        return resp if isinstance(resp, dict) else {"_value": resp}
 
     # ---------- long poll loop ----------
 
@@ -210,6 +239,13 @@ class VkAdapter:
         """
         log.info("vk update: %.400r", upd)
         try:
+            if isinstance(upd, dict) and upd.get("type") == "message_event":
+                # VK expects every tap answered, otherwise the user's button
+                # spins forever even though we handled it fine
+                obj = upd.get("object") or {}
+                await self._api("messages.sendMessageEvent",
+                                peer_id=obj.get("peer_id"),
+                                event_id=obj.get("event_id"))
             ev = parse_longpoll_update(upd)
             if ev and ev.platform_user_id == str(self._group_id):
                 return  # our own outgoing line on the user-LP stream

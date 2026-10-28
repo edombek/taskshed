@@ -54,6 +54,29 @@ class TestParseUpdate:
         }})
         assert ev and ev.callback == "fin:"
 
+    def test_catalog_start_command_becomes_a_real_command(self):
+        # «Начать» from VK's bot catalog; as free text a pending location
+        # question would adopt it as a place name (it happened live)
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": {"from_id": 7, "peer_id": 7, "text": ""},
+            "client_info": {"command": "start"},
+        }})
+        assert ev and ev.text == "/start"
+
+    def test_message_event_button_tap(self):
+        # live VK shape: taps are their own update kind, payload pre-decoded
+        ev = parse_longpoll_update({"type": "message_event", "object": {
+            "user_id": 323871959, "peer_id": 323871959,
+            "event_id": "b09c5edec3bb", "payload": {"cb": "cmd:places"},
+            "conversation_message_id": 27,
+        }})
+        assert ev and ev.callback == "cmd:places"
+        assert ev.platform_user_id == "323871959" and ev.text is None
+
+    def test_message_event_without_payload_is_dropped(self):
+        assert parse_longpoll_update({"type": "message_event", "object": {
+            "user_id": 1, "peer_id": 1, "event_id": "x"}}) is None
+
     def test_message_carries_the_button_message_id(self, env=None):
         ev = parse_longpoll_update({"type": "message_new", "object": {
             "message": {"from_id": 7, "text": ""},
@@ -139,6 +162,34 @@ class TestUpdateLoop:
         await ad._handle_update(
             [4, 21, 1, 323871959, 1793180005, " ... ", "/старт"])
         assert rec.got == ["323871959"]
+
+    async def test_message_event_is_acked_and_dispatched(self):
+        # a tap must be answered via sendMessageEvent (else VK spins) and
+        # reach the app as a callback
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+
+        class Recorder:
+            def __init__(self):
+                self.got = []
+
+            async def handle(self, ev):
+                self.got.append(ev.callback)
+
+        rec = Recorder()
+        ad = VkAdapter(VkCfg(group_token="t"), app=rec)
+        calls: list = []
+
+        async def fake_api(method, **params):
+            calls.append((method, params))
+            return {}
+        ad._api = fake_api
+        await ad._handle_update({"type": "message_event", "object": {
+            "user_id": 9, "peer_id": 9, "event_id": "e1",
+            "payload": {"cb": "cmd:stats"}}})
+        assert rec.got == ["cmd:stats"]
+        assert calls == [("messages.sendMessageEvent",
+                          {"peer_id": 9, "event_id": "e1"})]
 
 
 class TestLongPollServer:
