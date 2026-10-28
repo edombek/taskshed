@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **VK moved to `vk.ru`**: the adapter now calls `https://api.vk.ru/method/`
+  by default; the base is configurable (`platforms.vk.api_url` in
+  `config.yaml`, or `TASKSHED_VK_API_URL`) so an `api.vk.com` deployment keeps
+  working.
+- One flaky check fixed: 💤 sets `notify_at` to now+15 min, and the test now
+  measures that directly instead of comparing against an hour-dependent value.
 - **The menu walk always ends with ✅ Готово**: on the last level of a walk
   (stats screens, the hour-map navigator, the task-editor picker, the settings
   screen, the language menu) the exit button is «Готово» → main menu;

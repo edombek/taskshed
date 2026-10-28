@@ -95,3 +95,43 @@ def test_adapters_importable():
     from taskshed.entrypoints.common import build  # noqa: F401
     from taskshed.messaging.telegram import TelegramAdapter  # noqa: F401
     from taskshed.messaging.vk import VkAdapter  # noqa: F401
+
+
+class TestApiAddress:
+    """VK moved to the vk.ru domain zone: base is the default, still movable."""
+
+    def test_default_base_is_vk_ru(self):
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+        ad = VkAdapter(VkCfg(group_token="t", group_id=1), app=None)
+        assert ad._api_base == "https://api.vk.ru/method/"
+
+    def test_loader_default_is_the_value_not_a_slot_descriptor(self, tmp_path):
+        # a slots dataclass hands back a descriptor for the class attribute,
+        # so the loader must not build the URL from VkCfg.api_url
+        from taskshed.config import load_config
+        p = tmp_path / "config.yaml"
+        p.write_text('platforms:\n  vk:\n    enabled: true\n'
+                     '    group_token: "t"\n    group_id: 7\n', encoding="utf-8")
+        cfg = load_config(p)
+        assert cfg.vk.api_url == "https://api.vk.ru/method/"
+        assert not cfg.vk.api_url.startswith("<")
+
+    def test_config_and_env_override_the_base(self, tmp_path, monkeypatch):
+        from taskshed.config import load_config
+        p = tmp_path / "config.yaml"
+        p.write_text("platforms:\n  vk:\n    enabled: true\n"
+                     '    group_token: "t"\n    group_id: 7\n'
+                     '    api_url: "https://api.vk.com/method/"\n',
+                     encoding="utf-8")
+        cfg = load_config(p)
+        assert cfg.vk.api_url == "https://api.vk.com/method/"
+        monkeypatch.setenv("TASKSHED_VK_API_URL", "https://api.vk.ru/method/")
+        assert load_config(p).vk.api_url == "https://api.vk.ru/method/"
+
+    def test_base_is_slash_normalised(self):
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+        ad = VkAdapter(VkCfg(group_token="t", api_url="https://api.vk.ru/method"),
+                       app=None)
+        assert ad._api_base == "https://api.vk.ru/method/"

@@ -21,6 +21,9 @@ platforms:
     enabled: false
     group_token: "vk1.a.xxxxx"   # community access token (offline)
     group_id: 123456789
+    # VK API base: VK moved to its own domain zone — the default is vk.ru
+    # (api.vk.com still answers too, override here or with TASKSHED_VK_API_URL):
+    # api_url: "https://api.vk.ru/method/"
     # Regular HTTP/SOCKS5 proxy (optional) — MTProxy does not apply to VK API.
     proxy:
       type: socks5

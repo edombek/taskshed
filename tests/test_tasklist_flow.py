@@ -38,11 +38,14 @@ class TestSnoozePicker:
 
     async def test_choice_moves_the_notice_moment(self, env):
         store, occ_id = await _daily_task(env)
-        before = (await store.get_occurrence(occ_id))[0].notify_at
         f = await send(env, cb=f"snz:{occ_id}:15")
         assert any("15 мин" in t for t in f.texts())
         after = (await store.get_occurrence(occ_id))[0].notify_at
-        assert after > before + timedelta(minutes=14)
+        # 💤 sets the notice moment to now+15 min, whatever it was before — so
+        # the check is against the clock, not against a value that depends on
+        # what hour of the day the test happens to run at
+        target = datetime.now(UTC) + timedelta(minutes=15)
+        assert abs((after - target).total_seconds()) < 90
         # after a *completed* action the menu follow-up returns
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "cmd:tasks" in flat

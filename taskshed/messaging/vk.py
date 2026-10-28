@@ -21,7 +21,6 @@ from taskshed.messaging.base import ButtonRows, RawEvent
 
 log = logging.getLogger(__name__)
 
-API = "https://api.vk.com/method/"
 API_VERSION = "5.199"
 
 
@@ -83,6 +82,9 @@ class VkAdapter:
         self._session: aiohttp.ClientSession | None = None
         self._token = cfg.group_token
         self._lp_method = ""  # long poll endpoint that worked last time
+        # every api.vk.com deployment moved to vk.ru: the base is configurable,
+        # the long poll host itself VK hands back in the getLongPollServer reply
+        self._api_base = (cfg.api_url or "").rstrip("/") + "/"
 
     async def _http(self) -> aiohttp.ClientSession:
         if self._session is None:
@@ -93,7 +95,7 @@ class VkAdapter:
     async def _api(self, method: str, **params) -> dict:
         session = await self._http()
         params.update(access_token=self._token, v=API_VERSION)
-        async with session.post(API + method, data=params) as resp:
+        async with session.post(self._api_base + method, data=params) as resp:
             data = await resp.json()
         if "error" in data:
             log.warning("vk api %s error: %s", method, data["error"])

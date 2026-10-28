@@ -31,11 +31,18 @@ class TelegramCfg:
     proxy: ProxyCfg = field(default_factory=ProxyCfg)
 
 
+DEFAULT_VK_API = "https://api.vk.ru/method/"
+
+
 @dataclass(slots=True)
 class VkCfg:
     enabled: bool = False
     group_token: str = ""
     group_id: int = 0
+    # VK moved its domain zone: api.vk.com now also answers as api.vk.ru,
+    # and vk.ru is the address VK points at. Kept configurable so an old
+    # deployment or a mirror keeps working without a code change.
+    api_url: str = DEFAULT_VK_API
     proxy: ProxyCfg = field(default_factory=ProxyCfg)
 
 
@@ -80,6 +87,7 @@ def load_config(path: str | Path = "config.yaml") -> BotCfg:
             enabled=vk.get("enabled", False),
             group_token=str(vk.get("group_token") or ""),
             group_id=int(vk.get("group_id") or 0),
+            api_url=str(vk.get("api_url") or DEFAULT_VK_API),
             proxy=ProxyCfg(**{k: v for k, v in (vk.get("proxy") or {}).items()
                               if k in ("type", "url")}),
         )
@@ -105,6 +113,8 @@ def load_config(path: str | Path = "config.yaml") -> BotCfg:
         cfg.vk.enabled, cfg.vk.group_token = True, v
     if v := _env("TASKSHED_VK_GROUP_ID"):
         cfg.vk.group_id = int(v)
+    if v := _env("TASKSHED_VK_API_URL"):
+        cfg.vk.api_url = v
     if v := _env("TASKSHED_VK_PROXY_URL"):
         kind = "socks5" if v.startswith("socks") else "http"
         cfg.vk.proxy = ProxyCfg(type=kind, url=v)

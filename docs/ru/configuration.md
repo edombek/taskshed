@@ -41,12 +41,15 @@ platforms:
     enabled: true
     group_token: "vk1.a..."   # токен сообщества с включённым «offline»
     group_id: 123456789
+    api_url: "https://api.vk.ru/method/"   # по умолчанию; api.vk.com тоже отвечает
     proxy: {type: socks5, url: "socks5://user:pass@host:1080"}  # опционально
 ```
 
-API VK — обычный HTTPS, поэтому подходят стандартные HTTP/SOCKS5-прокси;
-MTProxy к VK неприменим. Env: `TASKSHED_VK_GROUP_TOKEN`, `..._GROUP_ID`,
-`..._PROXY_URL`.
+VK перевёл API в доменную зону `vk.ru`: база по умолчанию
+`https://api.vk.ru/method/`, переопределяется `api_url` или
+`TASKSHED_VK_API_URL`. API VK — обычный HTTPS, поэтому подходят стандартные
+HTTP/SOCKS5-прокси; MTProxy к VK неприменим. Env: `TASKSHED_VK_GROUP_TOKEN`,
+`..._GROUP_ID`, `..._API_URL`, `..._PROXY_URL`.
 
 ## Бот
 
