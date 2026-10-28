@@ -19,8 +19,9 @@ platforms:
 
   vk:
     enabled: false
-    group_token: "vk1.a.xxxxx"   # community access token (offline)
-    group_id: 123456789
+    group_token: "vk1.a.xxxxx"   # community token with "offline"+"longpoll"
+                                 # rights; the community id is discovered
+                                 # at startup, keyboards need the chat-bot status
     # VK API base: VK moved to its own domain zone — the default is vk.ru
     # (api.vk.com still answers too, override here or with TASKSHED_VK_API_URL):
     # api_url: "https://api.vk.ru/method/"

@@ -1,6 +1,7 @@
 """VK adapter pure-function tests + import smoke tests (no network)."""
 
 import json
+from datetime import UTC, datetime
 
 from taskshed.messaging.vk import build_keyboard, parse_longpoll_update
 
@@ -131,7 +132,8 @@ class TestUpdateLoop:
                 self.got.append(ev.platform_user_id)
 
         rec = Recorder()
-        ad = VkAdapter(VkCfg(group_token="t", group_id=242594545), app=rec)
+        ad = VkAdapter(VkCfg(group_token="t"), app=rec)
+        ad._group_id = 242594545
         await ad._handle_update(
             [4, 20, 2, 242594545, 1793180000, " ... ", "мой же ответ"])
         await ad._handle_update(
@@ -140,42 +142,81 @@ class TestUpdateLoop:
 
 
 class TestLongPollServer:
-    """A bad group_id must not kill the loop: fallback + loud failure."""
+    """The community id comes from the token, not the config; a refused
+    endpoint falls back, a fully dead token fails loudly."""
 
-    def _adapter(self, group_id: int, api_calls: list):
+    def _adapter(self, responses: dict, calls: list):
         async def fake_api(method, **params):
-            api_calls.append(method)
-            if method == "groups.getLongPollServer":
-                return {}                      # vk replied an error → {}
-            return {"server": "api.gim/1", "key": "k", "ts": 1}
+            calls.append((method, params))
+            return responses.get(method, {})
         from taskshed.config import VkCfg
         from taskshed.messaging.vk import VkAdapter
-        ad = VkAdapter(VkCfg(group_token="t", group_id=group_id), app=None)
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
         ad._api = fake_api
         return ad
 
+    async def test_group_detected_then_groups_endpoint(self):
+        calls: list = []
+        ad = self._adapter({
+            "groups.getById": {"groups": [{"id": 42, "name": "x"}]},
+            "groups.getLongPollServer": {"server": "lp/1", "key": "k", "ts": 7},
+        }, calls)
+        assert await ad._server() == ("https://lp/1", "k", 7)
+        assert ad._group_id == 42
+        assert [m for m, _ in calls] == ["groups.getById", "groups.getLongPollServer"]
+        assert calls[1][1] == {"group_id": 42}
+
     async def test_falls_back_to_messages_endpoint(self):
         calls: list = []
-        ad = self._adapter(0, calls)
+        ad = self._adapter({
+            "groups.getById": {"groups": [{"id": 42}]},
+            "messages.getLongPollServer": {"server": "api.gim/1", "key": "k", "ts": 1},
+        }, calls)
         assert await ad._server() == ("https://api.gim/1", "k", 1)
-        assert calls == ["messages.getLongPollServer"]  # group_id=0: skipped
+        assert [m for m, _ in calls] == ["groups.getById", "groups.getLongPollServer",
+                                         "messages.getLongPollServer"]
 
-    async def test_falls_back_when_groups_endpoint_denies(self):
+    async def test_groups_endpoint_works_without_id_when_detect_fails(self):
         calls: list = []
-        ad = self._adapter(-123, calls)
-        assert await ad._server() == ("https://api.gim/1", "k", 1)
-        assert calls == ["groups.getLongPollServer", "messages.getLongPollServer"]
+        ad = self._adapter({
+            "groups.getLongPollServer": {"server": "lp/2", "key": "k", "ts": 3},
+        }, calls)
+        assert await ad._server() == ("https://lp/2", "k", 3)
+        assert ad._group_id is None
+        assert calls[1] == ("groups.getLongPollServer", {})
 
     async def test_clear_error_when_both_endpoints_fail(self):
         from taskshed.config import VkCfg
         from taskshed.messaging.vk import VkAdapter
-        ad = VkAdapter(VkCfg(group_token="t", group_id=0), app=None)
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
         async def dead(method, **params):
-            return {}
+            return {"error": {"error_code": 5}}
         ad._api = dead
         import pytest
-        with pytest.raises(RuntimeError, match="check group_token/group_id"):
+        with pytest.raises(RuntimeError, match="check group_token"):
             await ad._server()
+
+
+class TestSendFallback:
+    async def test_912_community_without_bot_status_sends_text(self):
+        # VK refuses keyboards for communities lacking the chat bot status
+        # (912); the conversation must continue as plain text
+        from taskshed.config import VkCfg
+        from taskshed.core.models import Account
+        from taskshed.messaging.vk import VkAdapter
+        sent: list = []
+
+        async def fake_api(method, **params):
+            if method == "messages.send" and "keyboard" in params:
+                return {"error": {"error_code": 912}}
+            sent.append(params.get("message"))
+            return {"response_id": 1}
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
+        ad._api = fake_api
+        acc = Account(id=1, user_id=1, platform="vk", platform_user_id="9",
+                      linked_at=datetime.now(UTC))
+        await ad.send_buttons(acc, "текст", [[("A", "a")]])
+        assert sent == ["текст"]
 
 
 def test_adapters_importable():
@@ -190,7 +231,7 @@ class TestApiAddress:
     def test_default_base_is_vk_ru(self):
         from taskshed.config import VkCfg
         from taskshed.messaging.vk import VkAdapter
-        ad = VkAdapter(VkCfg(group_token="t", group_id=1), app=None)
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
         assert ad._api_base == "https://api.vk.ru/method/"
 
     def test_loader_default_is_the_value_not_a_slot_descriptor(self, tmp_path):
@@ -199,7 +240,7 @@ class TestApiAddress:
         from taskshed.config import load_config
         p = tmp_path / "config.yaml"
         p.write_text('platforms:\n  vk:\n    enabled: true\n'
-                     '    group_token: "t"\n    group_id: 7\n', encoding="utf-8")
+                     '    group_token: "t"\n', encoding="utf-8")
         cfg = load_config(p)
         assert cfg.vk.api_url == "https://api.vk.ru/method/"
         assert not cfg.vk.api_url.startswith("<")
@@ -208,7 +249,7 @@ class TestApiAddress:
         from taskshed.config import load_config
         p = tmp_path / "config.yaml"
         p.write_text("platforms:\n  vk:\n    enabled: true\n"
-                     '    group_token: "t"\n    group_id: 7\n'
+                     '    group_token: "t"\n'
                      '    api_url: "https://api.vk.com/method/"\n',
                      encoding="utf-8")
         cfg = load_config(p)

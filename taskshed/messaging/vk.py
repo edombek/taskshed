@@ -138,6 +138,7 @@ class VkAdapter:
         self._session: aiohttp.ClientSession | None = None
         self._token = cfg.group_token
         self._lp_method = ""  # long poll endpoint that worked last time
+        self._group_id: int | None = None  # discovered via groups.getById
         # every api.vk.com deployment moved to vk.ru: the base is configurable,
         # the long poll host itself VK hands back in the getLongPollServer reply
         self._api_base = (cfg.api_url or "").rstrip("/") + "/"
@@ -160,7 +161,7 @@ class VkAdapter:
             return {}
         if "error" in data:
             log.warning("vk api %s error: %s", method, data["error"])
-            return {}
+            return {"error": data["error"]}
         return data.get("response", {})
 
     # ---------- long poll loop ----------
@@ -210,22 +211,42 @@ class VkAdapter:
         log.info("vk update: %.400r", upd)
         try:
             ev = parse_longpoll_update(upd)
-            if ev and ev.platform_user_id == str(self.cfg.group_id):
+            if ev and ev.platform_user_id == str(self._group_id):
                 return  # our own outgoing line on the user-LP stream
             if ev:
                 await self.app.handle(ev)
         except Exception:
             log.exception("vk update failed: %.500r", upd)
 
+    async def _detect_group(self) -> None:
+        """Learn which community the token belongs to.
+
+        `groups.getById` without arguments answers with the very community
+        of a group token, so the config never repeats (or misspells) it.
+        """
+        d = await self._api("groups.getById")
+        groups = d.get("groups") or []
+        if groups and groups[0].get("id"):
+            self._group_id = int(groups[0]["id"])
+            log.info("vk community: id=%s «%s»",
+                     self._group_id, groups[0].get("name", "?"))
+        else:
+            log.warning("vk: groups.getById answered nothing — is the "
+                        "group_token valid?")
+
     async def _server(self):
-        # The community BLP endpoint wants group_id in config; when it is
-        # missing (0) or the token scopes reject it, the very same server is
-        # reachable via messages.getLongPollServer under a group token.
+        # which community the token belongs to is discovered, not configured;
+        # when the community BLP endpoint is refused (token without the
+        # longpoll right), the very same server is reachable via
+        # messages.getLongPollServer under a group token.
         # Remember which one worked so key refreshes stop probing both.
+        if self._group_id is None:
+            await self._detect_group()
         order: list[tuple[str, dict]] = []
-        if self.cfg.group_id and self._lp_method != "messages":
+        if self._lp_method != "messages":
             order.append(("groups.getLongPollServer",
-                          {"group_id": self.cfg.group_id}))
+                          {"group_id": self._group_id}
+                          if self._group_id else {}))
         order.append(("messages.getLongPollServer", {}))
         for name, params in order:
             d = await self._api(name, **params)
@@ -243,7 +264,7 @@ class VkAdapter:
                 log.info("vk long poll via %s: server=%s ts=%s",
                          name, server[:60], d.get("ts"))
                 return server, d["key"], d["ts"]
-        raise RuntimeError("no vk long poll server: check group_token/group_id")
+        raise RuntimeError("no vk long poll server: check group_token")
 
     # ---------- IMessenger ----------
 
@@ -252,9 +273,15 @@ class VkAdapter:
                         message=text, random_id=random.randint(1, 2**31))
 
     async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
-        await self._api("messages.send", peer_id=account.platform_user_id,
-                        message=text, keyboard=build_keyboard(buttons),
-                        random_id=random.randint(1, 2**31))
+        resp = await self._api("messages.send", peer_id=account.platform_user_id,
+                               message=text, keyboard=build_keyboard(buttons),
+                               random_id=random.randint(1, 2**31))
+        if (resp.get("error") or {}).get("error_code") == 912:
+            # VK only lets communities with the «чат-бот» status attach
+            # keyboards; without it the conversation must still go on as text
+            log.warning("vk: keyboard refused — enable the chat bot status "
+                        "in the community settings; sending text only")
+            await self.send_text(account, text)
 
     async def edit_buttons(self, account: Account, message_id: str, text: str,
                            buttons: ButtonRows) -> bool:

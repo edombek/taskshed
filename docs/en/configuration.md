@@ -40,17 +40,22 @@ Env: `TASKSHED_TELEGRAM_API_ID`, `..._API_HASH`, `..._BOT_TOKEN`,
 platforms:
   vk:
     enabled: true
-    group_token: "vk1.a..."   # community token with "offline" enabled
-    group_id: 123456789
+    group_token: "vk1.a..."   # community token: "offline" + "longpoll" rights
     api_url: "https://api.vk.ru/method/"   # default; api.vk.com also answers
     proxy: {type: socks5, url: "socks5://user:pass@host:1080"}  # optional
 ```
+
+The community itself is discovered at startup (`groups.getById` answers with
+the community that issued the token), so there is no `group_id` to keep in
+sync. Keyboards require the community to have the **chat bot** status enabled
+(Community management → General → Status); without it VK refuses keyboards
+(error 912) and the adapter degrades to text.
 
 VK moved its API to the `vk.ru` domain zone: the default base is
 `https://api.vk.ru/method/`, overridable via `api_url` or
 `TASKSHED_VK_API_URL`. VK API is plain HTTPS, so ordinary HTTP/SOCKS5 proxies
 are used; MTProxy does not apply. Env: `TASKSHED_VK_GROUP_TOKEN`,
-`..._GROUP_ID`, `..._API_URL`, `..._PROXY_URL`.
+`..._API_URL`, `..._PROXY_URL`.
 
 ## Bot
 

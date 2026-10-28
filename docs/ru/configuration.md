@@ -39,17 +39,22 @@ Env: `TASKSHED_TELEGRAM_API_ID`, `..._API_HASH`, `..._BOT_TOKEN`,
 platforms:
   vk:
     enabled: true
-    group_token: "vk1.a..."   # токен сообщества с включённым «offline»
-    group_id: 123456789
+    group_token: "vk1.a..."   # токен сообщества: права «offline» + «longpoll»
     api_url: "https://api.vk.ru/method/"   # по умолчанию; api.vk.com тоже отвечает
     proxy: {type: socks5, url: "socks5://user:pass@host:1080"}  # опционально
 ```
+
+Само сообщество определяется при старте (`groups.getById` отвечает тем
+сообществом, которому выдан токен), поэтому держать в конфиге `group_id`
+не нужно. Клавиатуры требуют включённого статуса **чат-бота** в сообществе
+(Управление сообществом → Основные → Статус); без него VK отклоняет
+клавиатуру (ошибка 912), и адаптер переходит на текст.
 
 VK перевёл API в доменную зону `vk.ru`: база по умолчанию
 `https://api.vk.ru/method/`, переопределяется `api_url` или
 `TASKSHED_VK_API_URL`. API VK — обычный HTTPS, поэтому подходят стандартные
 HTTP/SOCKS5-прокси; MTProxy к VK неприменим. Env: `TASKSHED_VK_GROUP_TOKEN`,
-`..._GROUP_ID`, `..._API_URL`, `..._PROXY_URL`.
+`..._API_URL`, `..._PROXY_URL`.
 
 ## Бот
 
