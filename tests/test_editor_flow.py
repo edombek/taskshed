@@ -137,8 +137,9 @@ class TestTaskEditor:
 
 
     async def test_menu_returns_after_the_editor_and_a_skip(self, env):
-        # browsing the editor must not leave a dialog open: skip/done replies
-        # still end with the main menu, otherwise nothing is clickable anymore
+        # browsing the editor must not leave a dialog open: a skip inside an
+        # open notice stays on the notice (its «Готово» owns the exit), and
+        # that «Готово» then brings the main menu back
         app, store, _ = env
         store, user, _, every, *_ = await self._seed(env)
         home = next(p.id for p in await store.list_places(user.id) if p.name == "Дом")
@@ -152,7 +153,9 @@ class TestTaskEditor:
                     if cb.startswith("skip:"))
         f = await send(env, cb=skip)
         assert "Пропущено" in f.texts()[0]
-        assert "Хотите сделать" in f.texts()[-1]
+        assert "cmd:tasks" not in [cb for row in f.sent[-1].buttons or []
+                                   for _, cb in row]   # no menu mid-notice
+        f = await send(env, cb="fin:")
         assert "cmd:tasks" in [cb for row in f.sent[-1].buttons for _, cb in row]
 
     async def test_place_delete_asks_before_wiping_its_tasks(self, env):

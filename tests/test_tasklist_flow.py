@@ -5,7 +5,7 @@ from datetime import UTC, datetime, time, timedelta
 from chatenv import PID, place_id_of, prev_buttons, send
 
 from taskshed.core.models import ScheduleType
-from taskshed.messaging.base import RawEvent
+from taskshed.messaging.base import FakeMessenger, RawEvent
 
 
 async def _daily_task(env, title="T", clock=time(9, 0), lead=60):
@@ -47,6 +47,44 @@ class TestSnoozePicker:
         target = datetime.now(UTC) + timedelta(minutes=15)
         assert abs((after - target).total_seconds()) < 90
         # after a *completed* action the menu follow-up returns
+        flat = [cb for row in f.last_buttons() for _, cb in row]
+        assert "cmd:tasks" in flat
+
+
+class TestEditlessPlatform:
+    """VK cannot edit messages: a status tap answers as a fresh message,
+    and the auto menu tail then lands in the middle of the notice (happened
+    live: the main menu arrived twice before «Готово» was pressed)."""
+
+    async def test_done_tap_does_not_push_the_menu(self, env):
+        app, store, fake = env
+        _, occ_id = await _daily_task(env)
+        noedit = FakeMessenger("telegram")
+
+        async def no_edit(*a, **k):
+            return False
+        noedit.edit_buttons = no_edit
+        app.messengers["telegram"] = noedit
+
+        await send(env, "/задачи")                     # notice with «Готово»
+        n = len(noedit.sent)
+        await send(env, cb=f"done:{occ_id}")
+        added = noedit.sent[n:]
+        assert len(added) == 1                         # only the confirmation
+        assert not added[0].buttons                    # no menu below it
+
+    async def test_stale_tap_outside_a_notice_still_gets_the_menu(self, env):
+        app, store, fake = env
+        store_, occ_id = await _daily_task(env)
+        noedit = FakeMessenger("telegram")
+
+        async def no_edit(*a, **k):
+            return False
+        noedit.edit_buttons = no_edit
+        app.messengers["telegram"] = noedit
+
+        # tap straight away: no notice open → the menu follow-up is the exit
+        f = await send(env, cb=f"done:{occ_id}")
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert "cmd:tasks" in flat
 
@@ -187,14 +225,14 @@ class TestOneMessagePerTask:
         assert f"done:{d1}" in flat  # still open, buttons are back
 
     async def test_unknown_message_falls_back_to_the_old_reply(self, env):
-        # unknown message id (restart, forwarded copy): reply + menu as before
+        # unknown message id (forwarded copy): the fallback is a plain reply;
+        # while the notice is open its «Готово» owns the exit, no menu pushed
         a, _ = await self._list_with_two(env)
         d1 = next(int(cb.split(":")[1]) for row in a.buttons for _, cb in row
                   if cb.startswith("done:"))
         f = await send(env, cb=f"done:{d1}", msg="telegram-999")
         assert any("Готово" in t for t in f.texts())
-        flat = [cb for row in f.last_buttons() for _, cb in row]
-        assert "cmd:tasks" in flat
+        assert not f.last_buttons()
         assert a.buttons  # the untouched original keeps its keyboard
 
 

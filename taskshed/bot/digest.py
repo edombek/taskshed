@@ -53,12 +53,23 @@ class DigestMixin:
 
     # ---------- task buttons ----------
 
+    def _stay_on_notice(self, ctx: Ctx) -> None:
+        """A status tap must not push the main menu into an open notice.
+
+        Platforms without message editing answer taps with fresh messages;
+        the auto-follow-up menu then lands in the middle of the status walk,
+        while the footer's «Готово» is the one exit back to the menu.
+        """
+        if (ctx.user.id, ctx.account.id) in self._fin_msgs:
+            ctx.suppress_menu = True
+
     async def _cb_done(self, ctx: Ctx, occ_id: int) -> None:
         got = await self.store.get_occurrence(occ_id)
         if not got or got[1].user_id != ctx.user.id:
             return
         if await self.store.mark_done(occ_id, ctx.ev.platform):
             if not await self._apply_task_msg(ctx, occ_id):
+                self._stay_on_notice(ctx)
                 await ctx.reply(t("msg_done", ctx.lang, title=got[1].title))
 
     async def _cb_wip(self, ctx: Ctx, occ_id: int) -> None:
@@ -69,6 +80,7 @@ class DigestMixin:
             return
         if await self.store.start_work(occ_id):
             if not await self._apply_task_msg(ctx, occ_id):
+                self._stay_on_notice(ctx)
                 await ctx.reply(t("msg_wip", ctx.lang, title=got[1].title))
 
     async def _cb_skip(self, ctx: Ctx, occ_id: int) -> None:
@@ -79,6 +91,7 @@ class DigestMixin:
             return
         if await self.store.skip(occ_id):
             if not await self._apply_task_msg(ctx, occ_id):
+                self._stay_on_notice(ctx)
                 await ctx.reply(t("msg_skipped", ctx.lang, title=got[1].title))
 
     async def _cb_snooze(self, ctx: Ctx, occ_id: int) -> None:
@@ -112,6 +125,7 @@ class DigestMixin:
                 "task_snoozed_note", ctx.lang, minutes=int(mins))
             if not await self._edit_task_msg(
                     ctx, int(occ_id_s), line, self._task_rows(ctx.lang, got[0])):
+                self._stay_on_notice(ctx)
                 await ctx.reply(t("msg_snoozed", ctx.lang, minutes=int(mins),
                                   title=got[1].title))
 

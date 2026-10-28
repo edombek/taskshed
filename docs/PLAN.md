@@ -219,3 +219,15 @@ Checklist of the implementation roadmap. EN summary in
 - Task-creation wizard state is in-memory (lost on restart).
 - Merge on `/link` runs without a confirmation preview of the two sides.
 - PostgreSQL driver (`asyncpg`) not exercised in CI yet.
+- **Design: reminders when a user lives on several platforms at once.** Today
+  `notify_platforms` is all-linked or `primary` only, and one platform's
+  button taps don't disarm the other platform's notice keyboards. Decide the
+  intended model: duplicate everywhere (redundant but simple — current),
+  one platform per notice (most recently active? quiet-platform order?),
+  and what "done" on Telegram means for the VK copy (cross-platform keyboard
+  disarming, or accept stale buttons on the other side?). Also: a user
+  answering on one platform gets the menu follow-up there only — fine?
+- On platforms without message editing (VK) a status tap answers as a fresh
+  message; the menu follow-up is suppressed while a notice is open, but the
+  notice's other task keyboards stay visible until «Готово» (VK cannot
+  disarm inline keyboards).
