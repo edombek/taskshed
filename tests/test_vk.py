@@ -69,6 +69,17 @@ class TestParseUpdate:
         }})
         assert ev and ev.text == "привет" and ev.platform_user_id == "9"
 
+    def test_numeric_user_lp_message(self):
+        # the exact shape the live fallback stream carried
+        ev = parse_longpoll_update(
+            [4, 16, 1, 323871959, 1793179926, " ... ", "/старт"])
+        assert ev and ev.text == "/старт"
+        assert ev.platform_user_id == "323871959"
+        assert ev.message_id == "16"
+
+    def test_numeric_typing_event_is_ignored(self):
+        assert parse_longpoll_update([61, 323871959, 1]) is None
+
 
 class TestUpdateLoop:
     """One broken update must never take the long poll connection down."""

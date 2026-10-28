@@ -50,6 +50,28 @@ def build_keyboard(buttons: ButtonRows) -> str:
     return json.dumps({"type": "inline", "buttons": flat}, ensure_ascii=False)
 
 
+def _parse_user_lp_message(ev: list) -> RawEvent | None:
+    """Numeric user-LP `message_new` (the fallback stream's shape).
+
+    Observed live: `[4, msg_id, flags, author_id, ts, title, text]`, and
+    typing arrives as `[61, uid, chat]`. The community's own outgoing
+    messages ride the same stream, so events authored by our group are
+    dropped — otherwise the bot would answer itself forever.
+    """
+    if ev[0] != 4 or len(ev) < 5:
+        return None
+    author = next((x for x in ev[1:] if isinstance(x, int) and 1_000_000 <= x < 2_000_000_000),
+                  None)
+    text = next((x for x in reversed(ev) if isinstance(x, str) and x.strip()
+                 and x.strip() != " ... "), None)
+    if not author or not text:
+        return None
+    mid = ev[1] if isinstance(ev[1], int) else None
+    return RawEvent(platform="vk", platform_user_id=str(author),
+                    text=text.strip(), callback=None,
+                    message_id=str(mid) if mid else None)
+
+
 def parse_longpoll_update(update: dict) -> RawEvent | None:
     """Turn one long poll update into a RawEvent, tolerating odd payloads.
 
@@ -58,6 +80,9 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
     missing. None of that must ever take the poll loop down — an unknown
     update is dropped, a message is read as well as it can be.
     """
+    if isinstance(update, (list, tuple)):
+        # user long poll (the token without the longpoll right): numeric events
+        return _parse_user_lp_message(list(update))
     if not isinstance(update, dict):
         log.debug("vk update is not an object: %.200r", update)
         return None
@@ -174,6 +199,8 @@ class VkAdapter:
         log.info("vk update: %.400r", upd)
         try:
             ev = parse_longpoll_update(upd)
+            if ev and ev.platform_user_id == str(self.cfg.group_id):
+                return  # our own outgoing line on the user-LP stream
             if ev:
                 await self.app.handle(ev)
         except Exception:
