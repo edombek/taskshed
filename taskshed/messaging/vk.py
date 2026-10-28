@@ -196,6 +196,12 @@ class VkAdapter:
                 server = d["server"]
                 if not server.startswith(("http://", "https://")):
                     server = "https://" + server  # VK hands back a bare host/path
+                if name == "messages.getLongPollServer":
+                    log.warning(
+                        "vk: groups.getLongPollServer is refused (the community "
+                        "token lacks the longpoll right) — falling back to the "
+                        "user long poll, which carries no button payloads; "
+                        "re-issue the token with «longpoll» for full support")
                 log.info("vk long poll via %s: server=%s ts=%s",
                          name, server[:60], d.get("ts"))
                 return server, d["key"], d["ts"]
