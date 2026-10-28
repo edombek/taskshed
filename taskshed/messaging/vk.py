@@ -126,6 +126,10 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
         # make it a real "/start" so it routes as a command and never lands
         # as free text (a pending "where are you?" would eat it as a name)
         text = "/start"
+    elif text.lower() in ("начать", "start"):
+        # …and the community's «кнопка старт» delivers the very same «Начать»
+        # as an ordinary text message (live: text='Начать', client_info=null)
+        text = "/start"
     callback = (_unwrap_payload(action.get("payload"))
                 if action.get("type") == "callback" else None)
     if not text and not callback:

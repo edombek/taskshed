@@ -63,6 +63,17 @@ class TestParseUpdate:
         }})
         assert ev and ev.text == "/start"
 
+    def test_start_button_arrives_as_plain_text(self):
+        # live: the community's «кнопка старт» sends text='Начать' exactly
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": {"from_id": 7, "peer_id": 7, "text": "Начать"},
+        }})
+        assert ev and ev.text == "/start"
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": {"from_id": 7, "peer_id": 7, "text": "задачи"},
+        }})
+        assert ev and ev.text == "задачи"  # ordinary text stays ordinary
+
     def test_message_event_button_tap(self):
         # live VK shape: taps are their own update kind, payload pre-decoded
         ev = parse_longpoll_update({"type": "message_event", "object": {

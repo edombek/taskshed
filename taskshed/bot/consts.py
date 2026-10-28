@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 COMMANDS = {
-    "start": "start", "старт": "start",
+    "start": "start", "старт": "start", "начать": "start",
     "помощь": "help", "help": "help",
     "гдея": "where", "where": "where",
     "задачи": "tasks", "tasks": "tasks",
