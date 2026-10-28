@@ -98,6 +98,27 @@ class TestUpdateLoop:
                     {"type": "message_change", "object": []}):
             await ad._handle_update(upd)     # nothing may escape
 
+    async def test_own_community_lines_are_dropped(self):
+        # the user-LP stream also carries what the bot itself sent: answering
+        # those would loop the conversation forever
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+
+        class Recorder:
+            def __init__(self):
+                self.got = []
+
+            async def handle(self, ev):
+                self.got.append(ev.platform_user_id)
+
+        rec = Recorder()
+        ad = VkAdapter(VkCfg(group_token="t", group_id=242594545), app=rec)
+        await ad._handle_update(
+            [4, 20, 2, 242594545, 1793180000, " ... ", "мой же ответ"])
+        await ad._handle_update(
+            [4, 21, 1, 323871959, 1793180005, " ... ", "/старт"])
+        assert rec.got == ["323871959"]
+
 
 class TestLongPollServer:
     """A bad group_id must not kill the loop: fallback + loud failure."""
