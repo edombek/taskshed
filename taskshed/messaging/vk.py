@@ -30,7 +30,8 @@ def build_keyboard(buttons: ButtonRows) -> str:
     VK wants a list of rows, each button `{action, color}`; the payload must
     be a JSON string ≤256 chars, so our internal `cmd:…` payloads travel in a
     `cb` envelope that the long poll parser unwraps again. The old flat
-    `{"type": "inline"}` shape was rejected live with 911 "unknown fields".
+    `{"type": "inline"}` shape was rejected live with 911 "unknown fields",
+    and long screens hit 911 "too much rows" — callers chunk via VK_MAX_ROWS.
     """
     colors = ["positive", "secondary", "primary", "negative"]
     rows = [[{"action": {"type": "callback", "label": label[:40],
@@ -40,6 +41,30 @@ def build_keyboard(buttons: ButtonRows) -> str:
             for i, row in enumerate(buttons)]
     return json.dumps({"one_time": False, "inline": True, "buttons": rows},
                       ensure_ascii=False)
+
+
+# VK inline keyboards are capped live (error 911): ≤6 rows, ≤10 buttons total,
+# ≤5 in one row. Long screens are packed into several messages; only the first
+# carries the text, the rest are a "…" continuation.
+VK_MAX_ROWS = 6
+VK_MAX_BUTTONS = 10
+
+
+def pack_keyboards(buttons: ButtonRows) -> list[ButtonRows]:
+    """Split rows into VK-sized chunks (greedy, whole rows stay together)."""
+    chunks: list[ButtonRows] = []
+    cur: ButtonRows = []
+    n_btn = 0
+    for row in buttons:
+        size = max(len(row), 1)
+        if cur and (len(cur) + 1 > VK_MAX_ROWS or n_btn + size > VK_MAX_BUTTONS):
+            chunks.append(cur)
+            cur, n_btn = [], 0
+        cur.append(row)
+        n_btn += size
+    if cur:
+        chunks.append(cur)
+    return chunks or [[]]
 
 
 def _unwrap_payload(raw) -> str | None:
@@ -169,6 +194,7 @@ class VkAdapter:
         self._token = cfg.group_token
         self._lp_method = ""  # long poll endpoint that worked last time
         self._group_id: int | None = None  # discovered via groups.getById
+        self._can_ack_events = True  # until vk.ru says error 27, see below
         # every api.vk.com deployment moved to vk.ru: the base is configurable,
         # the long poll host itself VK hands back in the getLongPollServer reply
         self._api_base = (cfg.api_url or "").rstrip("/") + "/"
@@ -243,13 +269,18 @@ class VkAdapter:
         """
         log.info("vk update: %.400r", upd)
         try:
-            if isinstance(upd, dict) and upd.get("type") == "message_event":
-                # VK expects every tap answered, otherwise the user's button
-                # spins forever even though we handled it fine
+            if (isinstance(upd, dict) and upd.get("type") == "message_event"
+                    and self._can_ack_events):
+                # try to stop the button spinner; live vk.ru refuses this with
+                # error 27 for community tokens — then we stop asking
                 obj = upd.get("object") or {}
-                await self._api("messages.sendMessageEvent",
-                                peer_id=obj.get("peer_id"),
-                                event_id=obj.get("event_id"))
+                resp = await self._api("messages.sendMessageEvent",
+                                       peer_id=obj.get("peer_id"),
+                                       event_id=obj.get("event_id"))
+                if (resp.get("error") or {}).get("error_code") == 27:
+                    self._can_ack_events = False
+                    log.info("vk: sendMessageEvent is refused with a community "
+                             "token (error 27) — taps work, spinners time out")
             ev = parse_longpoll_update(upd)
             if ev and ev.platform_user_id == str(self._group_id):
                 return  # our own outgoing line on the user-LP stream
@@ -313,15 +344,21 @@ class VkAdapter:
                         message=text, random_id=random.randint(1, 2**31))
 
     async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
-        resp = await self._api("messages.send", peer_id=account.platform_user_id,
-                               message=text, keyboard=build_keyboard(buttons),
-                               random_id=random.randint(1, 2**31))
-        if (resp.get("error") or {}).get("error_code") == 912:
-            # VK only lets communities with the «чат-бот» status attach
-            # keyboards; without it the conversation must still go on as text
-            log.warning("vk: keyboard refused — enable the chat bot status "
-                        "in the community settings; sending text only")
-            await self.send_text(account, text)
+        # VK caps inline keyboards (911), so long screens arrive as several
+        # messages; only the first carries the text
+        for first, chunk in enumerate(pack_keyboards(buttons) or [[]]):
+            resp = await self._api("messages.send", peer_id=account.platform_user_id,
+                                   message=text if first == 0 else "…",
+                                   keyboard=build_keyboard(chunk),
+                                   random_id=random.randint(1, 2**31))
+            err = (resp.get("error") or {}).get("error_code")
+            if err == 912 and first == 0:
+                # VK only lets communities with the «чат-бот» status attach
+                # keyboards; without it the conversation must still go on as text
+                log.warning("vk: keyboard refused — enable the chat bot status "
+                            "in the community settings; sending text only")
+                await self.send_text(account, text)
+                return
 
     async def edit_buttons(self, account: Account, message_id: str, text: str,
                            buttons: ButtonRows) -> bool:

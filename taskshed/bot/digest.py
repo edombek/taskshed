@@ -13,7 +13,7 @@ from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from taskshed.bot.context import Ctx
-from taskshed.core.models import Account, UserSettings
+from taskshed.core.models import Account, Platform, UserSettings
 from taskshed.core.models import Place as PlaceDC
 from taskshed.core.scheduling import in_notice_window
 from taskshed.i18n import t
@@ -257,13 +257,23 @@ class DigestMixin:
 
     async def _accounts_for(self, settings: UserSettings,
                             origin: Account | None = None) -> list[Account]:
-        """Accounts this user's notices are allowed to reach."""
+        """Accounts this user's notices are allowed to reach.
+
+        "primary" is the platform the user last talked to the bot on
+        (`last_seen`); a platform name pins notices to it — falling back
+        to where the user actually is when that platform is unlinked.
+        """
         accounts = await self.store.get_accounts(settings.user_id)
-        if settings.notify_platforms == "primary":
-            if origin is not None:
-                return [a for a in accounts if a.platform == origin.platform]
-            return sorted(accounts, key=lambda a: a.last_seen or a.linked_at)[-1:]
-        return accounts
+        mode = settings.notify_platforms
+        if mode == "all":
+            return accounts
+        if mode in (str(p) for p in Platform):
+            pinned = [a for a in accounts if str(a.platform) == mode]
+            if pinned:
+                return pinned
+        if origin is not None:
+            return [a for a in accounts if a.platform == origin.platform]
+        return sorted(accounts, key=lambda a: a.last_seen or a.linked_at)[-1:]
 
     def _others_block(self, lang: str, tz: ZoneInfo, others, names: dict) -> str:
         """Other places' tasks: short lines, no buttons — they are not here."""

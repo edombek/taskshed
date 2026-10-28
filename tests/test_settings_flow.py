@@ -185,7 +185,7 @@ class TestSettingsScreen:
         assert "График вперёд: 7 дн." in text
         flat = [cb for row in f.last_buttons() for _, cb in row]
         assert {"rem:toggle", "rem:morning", "rem:nag", "rem:quiet", "rem:ttl",
-                "rem:tz", "rem:horizon", "rem:lang", "rem:link",
+                "rem:tz", "rem:horizon", "rem:lang", "rem:link", "rem:where",
                 "menu:back"} <= set(flat)
         assert not any(cb.startswith("rem:unlink") for cb in flat)
 
@@ -225,3 +225,38 @@ class TestSettingsScreen:
         assert fake.find("отвязан")
         assert "VK ✗" in screen.text
         assert [a.platform for a in await store.get_accounts(user.id)] == ["telegram"]
+
+
+class TestNotifyWhere:
+    """📡 «Куда слать»: all / last-talked / pinned to one platform."""
+
+    async def _linked(self, env):
+        app, store, fake = env
+        await send(env, "Дом")
+        user = await store.get_user_by_account("telegram", PID)
+        vk_user, vk_acc = await store.register_account("vk", "999")
+        await store.attach_account(vk_acc, user.id)
+        await store.merge_user(vk_user.id, user.id)
+        return user
+
+    async def test_screen_offers_modes_with_current_marked(self, env):
+        app, store, fake = env
+        user = await self._linked(env)
+        f = await send(env, cb="rem:where")
+        labels = {cb: lbl for row in f.last_buttons() for lbl, cb in row}
+        assert {"rem:where:all", "rem:where:primary",
+                "rem:where:telegram", "rem:where:vk"} <= set(labels)
+        assert labels["rem:where:primary"].startswith("✓")   # the default
+        f = await send(env, cb="rem:where:vk")
+        assert (await store.get_settings(user.id)).notify_platforms == "vk"
+        labels = {cb: lbl for row in f.last_buttons() for lbl, cb in row}
+        assert labels["rem:where:vk"].startswith("✓")
+
+    async def test_status_line_shows_the_choice(self, env):
+        app, store, fake = env
+        await self._linked(env)
+        f = await send(env, "/настройки")
+        assert "Рассылка: 🕒 Где вы последний раз общались" in f.texts()[0]
+        await send(env, cb="rem:where:all")
+        f = await send(env, "/настройки")
+        assert "Рассылка: 🌍 Все платформы" in f.texts()[0]

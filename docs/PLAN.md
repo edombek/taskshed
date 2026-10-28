@@ -71,7 +71,11 @@ Checklist of the implementation roadmap. EN summary in
       War story: the first token lacked the right → legacy numeric user LP
       (decoded for text anyway, warned at startup); keyboards needed the
       chat-bot status (912 → text-only fallback); taps are `message_event`
-      + need `sendMessageEvent` ack; «Начать» arrives as plain text
+      + need `sendMessageEvent` ack; «Начать» arrives as plain text. Inline
+      keyboards are capped (≤6 rows / ≤10 buttons, live 911) — long screens
+      are packed into "…" continuation messages; vk.ru refuses `sendMessageEvent`
+      with a community token (27) — the adapter stops trying after the first
+      refusal
 - [x] VK smoke over live BLP (2026-10-28): `/старт` → greeting + 7-button
       menu, place pick, task wizard, ✅ taps land (`completed_via=vk`),
       ⏭/«Готово»/«Все задачи» walk (double-menu bug fixed on the way)
@@ -222,14 +226,12 @@ Checklist of the implementation roadmap. EN summary in
 - Task-creation wizard state is in-memory (lost on restart).
 - Merge on `/link` runs without a confirmation preview of the two sides.
 - PostgreSQL driver (`asyncpg`) not exercised in CI yet.
-- **Design: reminders when a user lives on several platforms at once.** Today
-  `notify_platforms` is all-linked or `primary` only, and one platform's
-  button taps don't disarm the other platform's notice keyboards. Decide the
-  intended model: duplicate everywhere (redundant but simple — current),
-  one platform per notice (most recently active? quiet-platform order?),
-  and what "done" on Telegram means for the VK copy (cross-platform keyboard
-  disarming, or accept stale buttons on the other side?). Also: a user
-  answering on one platform gets the menu follow-up there only — fine?
+- **Notices across platforms — decided 2026-10-28**: default `primary` (the
+      platform the user last talked to the bot on), `all`, or one platform
+      pinned (`telegram`/`vk`) via ⚙️ Settings → 📡 Куда слать. Since a
+      notice now usually lands on one chat, the cross-platform stale-keyboard
+      problem mostly disappears; with `all` the other platform's buttons stay
+      live until their ⏭/«Готово» (accepted).
 - On platforms without message editing (VK) a status tap answers as a fresh
   message; the menu follow-up is suppressed while a notice is open, but the
   notice's other task keyboards stay visible until «Готово» (VK cannot

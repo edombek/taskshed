@@ -53,6 +53,7 @@ class SettingsMixin:
                    quiet=f"{st.quiet_start:%H:%M}–{st.quiet_end:%H:%M}",
                    ttl=st.location_ttl_hours, horizon=st.stats_horizon_days,
                    tz=st.tz, platforms=platforms,
+                   notify=self._where_label(ctx, st.notify_platforms),
                    language="Русский" if ctx.lang == "ru" else "English")
         rows = [
             [(t("btn_rem_toggle", ctx.lang), "rem:toggle")],
@@ -63,7 +64,8 @@ class SettingsMixin:
             [(t("btn_rem_tz", ctx.lang), "rem:tz"),
              (t("btn_rem_horizon", ctx.lang), "rem:horizon")],
             [(t("btn_rem_lang", ctx.lang), "rem:lang"),
-             (t("btn_rem_link", ctx.lang), "rem:link")],
+             (t("btn_rem_where", ctx.lang), "rem:where")],
+            [(t("btn_rem_link", ctx.lang), "rem:link")],
         ]
         for acc in accounts:
             if acc.id != ctx.account.id:
@@ -112,6 +114,16 @@ class SettingsMixin:
             await ctx.reply(t("link_code_msg", ctx.lang, code=code),
                             [[(t("btn_back", ctx.lang), "rem:back")]])
             return
+        if arg == "where":
+            await self._rem_where(ctx)
+            return
+        if arg.startswith("where:"):
+            mode = arg.split(":", 1)[1]
+            if mode in ("all", "primary", "telegram", "vk"):
+                ctx.settings = await self.store.update_settings(
+                    ctx.user.id, notify_platforms=mode)
+            await self._rem_where(ctx)
+            return
         if arg.startswith("unlink:"):
             await self._cb_unlink_acc(ctx, arg.split(":", 1)[1])
             return
@@ -120,6 +132,30 @@ class SettingsMixin:
             ctx.suppress_menu = True  # the next message is the value itself
             await ctx.reply(t(f"rem_ask_{arg}", ctx.lang),
                             [[(t("btn_back", ctx.lang), "rem:back")]])
+
+    def _where_label(self, ctx: Ctx, mode: str) -> str:
+        if mode == "all":
+            return t("where_all", ctx.lang)
+        if mode == "primary":
+            return t("where_primary", ctx.lang)
+        return t("where_pin", ctx.lang, platform=self._platform_label(mode))
+
+    async def _rem_where(self, ctx: Ctx) -> None:
+        """Where task reminders go: everywhere, last-talked platform, or one
+        platform pinned. Pinning an unlinked platform would be a silent dead
+        end, so only the linked ones are offered."""
+        accounts = await self.store.get_accounts(ctx.user.id)
+        linked = {str(a.platform) for a in accounts}
+        modes = ["all", "primary"] + [p for p in ("telegram", "vk") if p in linked]
+        rows = []
+        for m in modes:
+            label = self._where_label(ctx, m)
+            if ctx.settings.notify_platforms == m:
+                label = "✓ " + label
+            rows.append([(label, f"rem:where:{m}")])
+        rows.append([(t("btn_back", ctx.lang), "rem:back")])
+        ctx.suppress_menu = True
+        await ctx.reply(t("where_title", ctx.lang), rows)
 
     async def _cb_unlink_acc(self, ctx: Ctx, acc_id: str) -> None:
         """Unlinking from the settings screen: the row named the account."""

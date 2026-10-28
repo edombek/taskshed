@@ -15,7 +15,9 @@ class TestFanout:
         await store.attach_account(vk_acc, user.id)
         await store.merge_user(vk_user.id, user.id)
         text, buttons = "📋 digest", [[("✅", "done:1")]]
-        await app.notify_user(user.id, text, buttons)  # notify_platforms=all default
+        assert (await store.get_settings(user.id)).notify_platforms == "primary"
+        await store.update_settings(user.id, notify_platforms="all")
+        await app.notify_user(user.id, text, buttons)
         assert any(m.text == text for m in fake.sent)
         assert any(m.text == text for m in app.messengers["vk"].sent)
         app.messengers["vk"].clear()
@@ -24,6 +26,11 @@ class TestFanout:
         await app.handle(RawEvent("vk", "999", text="/start"))  # vk becomes most recent
         await app.notify_user(user.id, text, buttons)
         assert app.messengers["vk"].sent and not fake.sent
+        app.messengers["vk"].clear()
+        # pinned platform beats activity
+        await store.update_settings(user.id, notify_platforms="telegram")
+        await app.notify_user(user.id, text, buttons)
+        assert fake.sent and not app.messengers["vk"].sent
 
 
 class TestLinking:

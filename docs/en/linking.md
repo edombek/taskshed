@@ -47,6 +47,9 @@ and settings live on the user, so they are shared automatically.
   fresh empty user on the next message). Refused when it is the only
   account.
 
-Reminder fan-out follows `user_settings.notify_platforms`:
-`all` (default) sends to every linked chat; `primary` sends only to the
-account with the most recent activity (`accounts.last_seen`).
+Reminder fan-out follows `user_settings.notify_platforms`, changed via
+⚙️ Settings → 📡 Where to send: `primary` (default) sends only to the
+account with the most recent activity (`accounts.last_seen` — where you last
+talked to the bot); `all` sends to every linked chat; `telegram` / `vk` pin
+the notices to one platform (falling back to the most recent account when
+that platform is not linked).

@@ -112,7 +112,7 @@ class UserSettings:
     quiet_end: time = time(7, 0)
     location_ttl_hours: int = 6
     tz: str = "UTC"
-    notify_platforms: str = "all"       # "all" | "primary"
+    notify_platforms: str = "primary"   # "all" | "primary" (last talked) | "telegram" | "vk"
     stats_format: str = "both"          # "text" | "image" | "both"
     # how many days into the future activity charts reach (1 week by default)
     stats_horizon_days: int = 7

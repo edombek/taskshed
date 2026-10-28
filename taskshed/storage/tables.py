@@ -67,7 +67,7 @@ class UserSettings(Base):
     quiet_end: Mapped[str] = mapped_column(String(5), default="07:00")
     location_ttl_hours: Mapped[int] = mapped_column(Integer, default=6)
     tz: Mapped[str] = mapped_column(String(64), default="UTC")
-    notify_platforms: Mapped[str] = mapped_column(String(10), default="all")
+    notify_platforms: Mapped[str] = mapped_column(String(10), default="primary")
     stats_format: Mapped[str] = mapped_column(String(10), default="both")
     stats_horizon_days: Mapped[int] = mapped_column(Integer, default=7)
     last_morning_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

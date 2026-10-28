@@ -259,6 +259,66 @@ class TestLongPollServer:
             await ad._server()
 
 
+class TestApiPayload:
+    def test_packer_respects_row_and_button_caps(self):
+        # VK live: ≤6 rows and ≤10 buttons per inline keyboard
+        from taskshed.messaging.vk import pack_keyboards
+        rows7 = [[(str(i), f"n:{i}")] for i in range(7)]
+        chunks = pack_keyboards(rows7)
+        assert [len(c) for c in chunks] == [6, 1]
+        btns = [[("a", "1"), ("b", "2")] for _ in range(7)]   # 14 buttons
+        chunks = pack_keyboards(btns)
+        assert [sum(len(r) for r in c) for c in chunks] == [10, 4]
+        assert all(len(c) <= 6 for c in chunks)
+        assert pack_keyboards([]) == [[]]
+
+    async def test_send_splits_and_continues(self):
+        # a screen bigger than VK allows arrives as several messages
+        from datetime import UTC, datetime
+
+        from taskshed.config import VkCfg
+        from taskshed.core.models import Account
+        from taskshed.messaging.vk import VkAdapter
+        sent: list = []
+
+        async def fake_api(method, **params):
+            sent.append(params)
+            return {"_value": 1}
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
+        ad._api = fake_api
+        acc = Account(id=1, user_id=1, platform="vk", platform_user_id="9",
+                      linked_at=datetime.now(UTC))
+        rows = [[(str(i), f"n:{i}")] for i in range(9)]
+        await ad.send_buttons(acc, "экран", rows)
+        assert [p["message"] for p in sent] == ["экран", "…"]
+
+    async def test_event_ack_stops_after_error_27(self):
+        # vk.ru refuses sendMessageEvent with community tokens (27): ask once,
+        # then stop — taps themselves keep flowing
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+
+        class Recorder:
+            def __init__(self):
+                self.got = []
+
+            async def handle(self, ev):
+                self.got.append(ev.callback)
+
+        rec = Recorder()
+        ad = VkAdapter(VkCfg(group_token="t"), app=rec)
+        calls: list = []
+
+        async def fake_api(method, **params):
+            calls.append(method)
+            return {"error": {"error_code": 27}}
+        ad._api = fake_api
+        ev = {"type": "message_event", "object": {
+            "user_id": 9, "peer_id": 9, "event_id": "e", "payload": {"cb": "x"}}}
+        await ad._handle_update(dict(ev))
+        await ad._handle_update(dict(ev))
+        assert rec.got == ["x", "x"]              # taps still dispatch
+        assert calls == ["messages.sendMessageEvent"]   # tried exactly once
 class TestSendFallback:
     async def test_912_community_without_bot_status_sends_text(self):
         # VK refuses keyboards for communities lacking the chat bot status

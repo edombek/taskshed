@@ -2,7 +2,7 @@ sequenceDiagram
     autonumber
     participant Sch as run_tick (every 60s, UTC now)
     participant Core as BotApp + Store
-    participant Msg as Messenger port<br/>(notify_user → all/primary accounts)
+    participant Msg as Messenger port<br/>(notify_user → all/primary/pinned accounts)
     participant U as User (TG/VK)
 
     Sch->>Core: mark_overdue(now): pending past due → missed<br/>(in_progress work stays open)

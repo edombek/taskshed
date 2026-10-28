@@ -103,7 +103,7 @@ erDiagram
         string quiet_end "HH:MM"
         int location_ttl_hours
         string tz
-        string notify_platforms "all|primary"
+        string notify_platforms "all|primary|telegram|vk"
         string stats_format "both|text|image"
         int stats_horizon_days "chart lookahead, default 7"
         datetime last_morning_at "nullable, UTC"
@@ -235,7 +235,7 @@ sequenceDiagram
     autonumber
     participant Sch as run_tick (every 60s, UTC now)
     participant Core as BotApp + Store
-    participant Msg as Messenger port<br/>(notify_user → all/primary accounts)
+    participant Msg as Messenger port<br/>(notify_user → all/primary/pinned accounts)
     participant U as User (TG/VK)
 
     Sch->>Core: mark_overdue(now): pending past due → missed<br/>(in_progress work stays open)
