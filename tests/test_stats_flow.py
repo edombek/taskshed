@@ -332,7 +332,7 @@ class TestChartHorizonAndHours:
         user = await store.get_user_by_account("telegram", PID)
         pid = await place_id_of(store, user.id, "Дом")
         await store.create_task(user.id, pid, "Совещание", ScheduleType.WEEKDAYS,
-                                {"weekdays": [0, 2, 4]}, time(9, 0))
+                                {"weekdays": [0, 2, 4]}, time(23, 0))
         await app.handle(RawEvent("telegram", PID, text="/статистика год график"))
         occs = await store.occurrences_in_range(
             user.id, datetime.now(UTC) - timedelta(days=365), datetime.now(UTC))

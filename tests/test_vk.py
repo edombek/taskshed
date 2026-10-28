@@ -51,6 +51,42 @@ class TestParseUpdate:
         assert parse_longpoll_update({"type": "message_new",
                                       "object": [{"from_id": 1}]}) is None
 
+    def test_update_itself_is_a_list(self):
+        # a real live payload once carried a bare list where an object was
+        # expected — the poll loop must shrug, not die
+        assert parse_longpoll_update(["message_new", {}]) is None
+
+    def test_list_client_info_and_button_action_are_tolerated(self):
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": {"from_id": 5, "text": "/старт", "id": 3},
+            "client_info": [{"button_action": ["type", "callback"]}],
+        }})
+        assert ev and ev.text == "/старт" and ev.callback is None
+
+    def test_message_field_of_the_wrong_kind_falls_back_to_object(self):
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": ["nope"], "from_id": 9, "text": "привет",
+        }})
+        assert ev and ev.text == "привет" and ev.platform_user_id == "9"
+
+
+class TestUpdateLoop:
+    """One broken update must never take the long poll connection down."""
+
+    async def test_handle_update_swallows_everything(self):
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+
+        class Boom:
+            async def handle(self, ev):
+                raise RuntimeError("app exploded")
+
+        ad = VkAdapter(VkCfg(group_token="t"), app=Boom())
+        for upd in ([1], {"type": "message_new",
+                          "object": {"message": {"from_id": 1, "text": "x"}}},
+                    {"type": "message_change", "object": []}):
+            await ad._handle_update(upd)     # nothing may escape
+
 
 class TestLongPollServer:
     """A bad group_id must not kill the loop: fallback + loud failure."""

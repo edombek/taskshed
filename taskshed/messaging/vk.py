@@ -51,18 +51,35 @@ def build_keyboard(buttons: ButtonRows) -> str:
 
 
 def parse_longpoll_update(update: dict) -> RawEvent | None:
+    """Turn one long poll update into a RawEvent, tolerating odd payloads.
+
+    VK hands back shapes that differ between clients and update kinds: the
+    object may be a list, `client_info`/`button_action` may be lists or
+    missing. None of that must ever take the poll loop down — an unknown
+    update is dropped, a message is read as well as it can be.
+    """
+    if not isinstance(update, dict):
+        log.debug("vk update is not an object: %.200r", update)
+        return None
     if update.get("type") != "message_new":
+        log.debug("vk update ignored: %s", update.get("type"))
         return None
     obj = update.get("object") or {}
     if not isinstance(obj, dict):  # some update shapes ship a list here
         log.debug("vk message_new with unexpected object: %.200r", obj)
         return None
-    msg = obj.get("message", obj)
+    msg = obj.get("message")
+    if not isinstance(msg, dict):
+        msg = obj
     peer = msg.get("from_id") or msg.get("peer_id")
     if not peer:
         return None
-    client = (obj.get("client_info") or msg.get("client_info") or {})
+    client = obj.get("client_info") or msg.get("client_info") or {}
+    if not isinstance(client, dict):
+        client = {}
     action = client.get("button_action") or {}
+    if not isinstance(action, dict):
+        action = {}
     text = (msg.get("text") or "").strip()
     callback = action.get("payload") if action.get("type") == "callback" else None
     if not text and not callback:
@@ -126,12 +143,8 @@ class VkAdapter:
                             continue
                         ts = payload.get("ts", ts)
                         for upd in payload.get("updates", []):
-                            ev = parse_longpoll_update(upd)
-                            if ev:
-                                log.info("incoming %s peer=%s text=%r cb=%r",
-                                         upd.get("type"), ev.platform_user_id,
-                                         (ev.text or "")[:80], ev.callback)
-                                await self.app.handle(ev)
+                            # one broken update must never kill the connection
+                            await self._handle_update(upd)
                     except (TimeoutError, aiohttp.ClientError, ValueError):
                         # ValueError: aiohttp's JSONDecodeError on empty replies
                         await asyncio.sleep(3)
@@ -139,6 +152,22 @@ class VkAdapter:
             except Exception as exc:
                 log.error("vk long poll unavailable: %s (retry in 30s)", exc)
                 await asyncio.sleep(30)
+
+    async def _handle_update(self, upd) -> None:
+        """Parse and dispatch one update; never let it break the loop.
+
+        VK shapes vary by client; when anything goes wrong the raw update
+        goes to the log, the connection stays up.
+        """
+        try:
+            ev = parse_longpoll_update(upd)
+            if ev:
+                log.info("incoming %s peer=%s text=%r cb=%r",
+                         upd.get("type"), ev.platform_user_id,
+                         (ev.text or "")[:80], ev.callback)
+                await self.app.handle(ev)
+        except Exception:
+            log.exception("vk update failed: %.500r", upd)
 
     async def _server(self):
         # The community BLP endpoint wants group_id in config; when it is
