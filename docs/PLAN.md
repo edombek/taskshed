@@ -70,8 +70,14 @@ Checklist of the implementation roadmap. EN summary in
       falls back to `messages.getLongPollServer` (returns the same `gim…`
       server), normalizes the bare host to https, and retries instead of
       crashing the process
-- [ ] VK smoke: long poll connects, `/старт` replies — connects, awaiting the
-      interactive walk (⏭ «Не сейчас» stale-copy dead end fixed on the way)
+- [x] VK long poll lives: writes arrive (`vk update:` raw log), the fallback
+      stream turned out to be the **legacy numeric user LP** — no
+      `client_info`/callback payloads, so buttons can never arrive there;
+      the adapter warns about it at startup. The API base moved to
+      `api.vk.ru` (configurable). Blocked on: re-issue the community token
+      with the «longpoll» right so BLP (`groups.getLongPollServer`) works
+- [ ] VK smoke: `/старт` replies, the notice buttons, stats — awaiting the
+      re-issued token (⏭ «Не сейчас» stale-copy dead end fixed on the way)
 - [ ] `/link` code round-trip Telegram ↔ VK, fan-out of reminders
       — VK account is not linked yet: it is not registered in `accounts`,
       so digests do not fan out to VK; start it by writing anything to the
