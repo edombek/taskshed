@@ -25,29 +25,39 @@ API_VERSION = "5.199"
 
 
 def build_keyboard(buttons: ButtonRows) -> str:
-    """Flatten our rows into a VK inline keyboard JSON.
+    """Render our rows as VK's native keyboard JSON (inline callback keys).
 
-    VK inline keyboards flow by `pos` (0..3); a button at pos 3 ends the row.
-    Short rows therefore place their last button at pos 3.
+    VK wants a list of rows, each button `{action, color}`; the payload must
+    be a JSON string ≤256 chars, so our internal `cmd:…` payloads travel in a
+    `cb` envelope that the long poll parser unwraps again. The old flat
+    `{"type": "inline"}` shape was rejected live with 911 "unknown fields".
     """
-    flat, row_no = [], 0
     colors = ["positive", "secondary", "primary", "negative"]
-    for row in buttons:
-        n = len(row)
-        for j, (label, cb) in enumerate(row):
-            if n >= 4:
-                pos = j % 4
-            elif j == n - 1:
-                pos = 3
-            else:
-                pos = j
-            flat.append({
-                "color": colors[row_no % len(colors)],
-                "action": {"type": "callback", "label": label[:40], "payload": cb},
-                "pos": pos,
-            })
-        row_no += 1
-    return json.dumps({"type": "inline", "buttons": flat}, ensure_ascii=False)
+    rows = [[{"action": {"type": "callback", "label": label[:40],
+                         "payload": json.dumps({"cb": cb}, ensure_ascii=False)},
+              "color": colors[i % len(colors)]}
+             for label, cb in row]
+            for i, row in enumerate(buttons)]
+    return json.dumps({"one_time": False, "inline": True, "buttons": rows},
+                      ensure_ascii=False)
+
+
+def _unwrap_payload(raw) -> str | None:
+    """Take a button payload back to the app's internal callback string.
+
+    VK hands `button_action.payload` back verbatim: JSON from build_keyboard,
+    anything else (someone crafted it by hand) is passed through as text.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return raw
+    if isinstance(data, dict):
+        cb = data.get("cb")
+        return cb if isinstance(cb, str) else None
+    return data if isinstance(data, str) else None
 
 
 def _parse_user_lp_message(ev: list) -> RawEvent | None:
@@ -109,7 +119,8 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
     if not text and isinstance(client.get("command"), str):
         # the VK bot catalog's «Начать» arrives as a command, not as text
         text = client["command"].strip()
-    callback = action.get("payload") if action.get("type") == "callback" else None
+    callback = (_unwrap_payload(action.get("payload"))
+                if action.get("type") == "callback" else None)
     if not text and not callback:
         return None
     mid = obj.get("last_message_id") or msg.get("id")

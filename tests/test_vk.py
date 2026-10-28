@@ -6,18 +6,28 @@ from taskshed.messaging.vk import build_keyboard, parse_longpoll_update
 
 
 class TestKeyboard:
-    def test_inline_flatten_rows(self):
+    def test_rows_and_envelope(self):
         kb = json.loads(build_keyboard([[("✅", "done:1"), ("⏭", "snooze:1")],
                                         [("Дом", "place:2")]]))
-        assert kb["type"] == "inline"
-        b = kb["buttons"]
-        assert b[0]["pos"] == 0 and b[1]["pos"] == 3   # 1st row ends at pos 3
-        assert b[2]["action"]["payload"] == "place:2"
+        assert kb["inline"] is True and kb["one_time"] is False
+        assert len(kb["buttons"]) == 2                     # rows stay rows
+        assert kb["buttons"][0][0]["action"]["label"] == "✅"
+        assert kb["buttons"][1][0]["color"] == "secondary"
+        # VK only takes JSON payloads: our cb travels in an envelope
+        assert json.loads(kb["buttons"][0][0]["action"]["payload"]) == {"cb": "done:1"}
+
+    def test_only_documented_fields(self):
+        # live error 911 rejected the old {"type": "inline"}/pos shape
+        kb = json.loads(build_keyboard([[("x", "rem:toggle")]]))
+        btn = kb["buttons"][0][0]
+        assert set(kb) == {"one_time", "inline", "buttons"}
+        assert set(btn) == {"action", "color"}
+        assert set(btn["action"]) == {"type", "label", "payload"}
 
     def test_payload_roundtrip(self):
+        from taskshed.messaging.vk import _unwrap_payload
         kb = json.loads(build_keyboard([[("x", "rem:toggle")]]))
-        assert json.loads(json.dumps(kb))  # valid JSON
-        assert kb["buttons"][0]["action"]["payload"] == "rem:toggle"
+        assert _unwrap_payload(kb["buttons"][0][0]["action"]["payload"]) == "rem:toggle"
 
 
 class TestParseUpdate:
@@ -33,6 +43,15 @@ class TestParseUpdate:
             "client_info": {"button_action": {"type": "callback", "payload": "done:3"}},
         }})
         assert ev and ev.callback == "done:3" and ev.text is None
+
+    def test_button_press_cb_envelope(self):
+        # the payload build_keyboard sends comes back wrapped in {"cb": …}
+        ev = parse_longpoll_update({"type": "message_new", "object": {
+            "message": {"from_id": 7, "text": ""},
+            "client_info": {"button_action": {
+                "type": "callback", "payload": '{"cb": "fin:"}'}},
+        }})
+        assert ev and ev.callback == "fin:"
 
     def test_message_carries_the_button_message_id(self, env=None):
         ev = parse_longpoll_update({"type": "message_new", "object": {
