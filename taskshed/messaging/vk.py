@@ -81,6 +81,9 @@ def parse_longpoll_update(update: dict) -> RawEvent | None:
     if not isinstance(action, dict):
         action = {}
     text = (msg.get("text") or "").strip()
+    if not text and isinstance(client.get("command"), str):
+        # the VK bot catalog's «Начать» arrives as a command, not as text
+        text = client["command"].strip()
     callback = action.get("payload") if action.get("type") == "callback" else None
     if not text and not callback:
         return None
@@ -144,6 +147,8 @@ class VkAdapter:
                             log.warning("vk long poll: odd payload: %.200r", payload)
                             continue
                         if "failed" in payload:
+                            log.info("vk long poll answered %r: refreshing key",
+                                     payload)
                             server, key, ts = await self._server()
                             continue
                         ts = payload.get("ts", ts)
@@ -161,15 +166,15 @@ class VkAdapter:
     async def _handle_update(self, upd) -> None:
         """Parse and dispatch one update; never let it break the loop.
 
-        VK shapes vary by client; when anything goes wrong the raw update
-        goes to the log, the connection stays up.
+        VK shapes vary by client, and an update that parses to nothing is
+        invisible otherwise — so every arrival is logged raw first. When
+        anything goes wrong the trace lands right under that raw shape and
+        the connection stays up.
         """
+        log.info("vk update: %.400r", upd)
         try:
             ev = parse_longpoll_update(upd)
             if ev:
-                log.info("incoming %s peer=%s text=%r cb=%r",
-                         upd.get("type"), ev.platform_user_id,
-                         (ev.text or "")[:80], ev.callback)
                 await self.app.handle(ev)
         except Exception:
             log.exception("vk update failed: %.500r", upd)
@@ -191,6 +196,8 @@ class VkAdapter:
                 server = d["server"]
                 if not server.startswith(("http://", "https://")):
                     server = "https://" + server  # VK hands back a bare host/path
+                log.info("vk long poll via %s: server=%s ts=%s",
+                         name, server[:60], d.get("ts"))
                 return server, d["key"], d["ts"]
         raise RuntimeError("no vk long poll server: check group_token/group_id")
 
