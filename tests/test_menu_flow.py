@@ -130,11 +130,21 @@ class TestStaleKeyboardCleanup:
     async def test_followup_menu_is_disarmed_too(self, env):
         app, store, fake = env
         await send(env, "Дом")
-        await app.handle(RawEvent("telegram", PID, text="/задачи"))
         menu = fake.sent[-1]
         assert menu.buttons  # the "anything else?" menu
-        await app.handle(RawEvent("telegram", PID, text="/гдея"))
+        await app.handle(RawEvent("telegram", PID, text="/задачи"))
         assert menu.buttons == []
+
+    async def test_repeat_where_redraws_the_question_in_place(self, env):
+        # re-opening «Где я» must not pile up identical question copies
+        app, store, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, text="/гдея"))
+        question = fake.sent[-1]
+        assert question.buttons
+        await app.handle(RawEvent("telegram", PID, text="/гдея"))
+        assert [m for m in fake.sent if "Где вы сейчас" in m.text] == [question]
+        assert question.buttons  # the redrawn screen is still clickable
 
     async def test_inplace_screen_stays_armed(self, env):
         app, store, fake = env

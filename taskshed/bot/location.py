@@ -2,6 +2,7 @@
 
 from taskshed.bot.context import Ctx
 from taskshed.i18n import t
+from taskshed.messaging.base import ButtonRows
 
 
 class LocationMixin:
@@ -27,7 +28,21 @@ class LocationMixin:
             self._park_context(ctx.user.id) if resume is None else resume)
         ctx.suppress_menu = True  # question + ⏭ Позже + ⬅️ Назад is the reply
         rows = [[(t("btn_loc_later", ctx.lang), "loc:later")]] + self._back_only(ctx)
-        await ctx.place_buttons("where_question", rows)
+        await self._where_screen(ctx, rows)
+
+    async def _where_screen(self, ctx: Ctx, extra_rows: ButtonRows) -> None:
+        """The «Где вы сейчас?» screen with place buttons, re-rendered in
+        place: repeating 📍 Где я or a failed place name redoes the same
+        message instead of stacking another copy."""
+        places = await self.store.list_places(ctx.user.id)
+        if not places:
+            # keep the question on screen: it invites typing a brand new name
+            await self._screen(ctx, "where_q",
+                               f"{t('where_question', ctx.lang)}\n"
+                               f"{t('no_places', ctx.lang)}", extra_rows)
+            return
+        rows = [[(p.name, f"place:{p.id}")] for p in places] + extra_rows
+        await self._screen(ctx, "where_q", t("where_question", ctx.lang), rows)
 
     async def _location_chosen(self, ctx: Ctx, place) -> None:
         """The place that answers a parked question: set it, resume, digest."""

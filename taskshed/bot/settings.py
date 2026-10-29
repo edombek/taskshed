@@ -103,10 +103,9 @@ class SettingsMixin:
             await self._settings_status(ctx)
             return
         if arg == "lang":
-            ctx.suppress_menu = True
-            await ctx.reply(t("lang_menu", ctx.lang),
-                            [[("Русский", "lang:ru"), ("English", "lang:en")],
-                             [(t("btn_back", ctx.lang), "rem:back")]])
+            await self._screen(ctx, "rem_lang", t("lang_menu", ctx.lang),
+                               [[("Русский", "lang:ru"), ("English", "lang:en")],
+                                [(t("btn_back", ctx.lang), "rem:back")]])
             return
         if arg == "link":
             code = await self.store.create_link_code(ctx.user.id, ctx.ev.platform)
@@ -154,8 +153,7 @@ class SettingsMixin:
                 label = "✓ " + label
             rows.append([(label, f"rem:where:{m}")])
         rows.append([(t("btn_back", ctx.lang), "rem:back")])
-        ctx.suppress_menu = True
-        await ctx.reply(t("where_title", ctx.lang), rows)
+        await self._screen(ctx, "rem_where", t("where_title", ctx.lang), rows)
 
     async def _cb_unlink_acc(self, ctx: Ctx, acc_id: str) -> None:
         """Unlinking from the settings screen: the row named the account."""

@@ -125,9 +125,8 @@ class BotApp(
                     await self._location_chosen(ctx, fresh)
                     return
             ctx.suppress_menu = True  # only the re-ask owns its own buttons
-            await ctx.place_buttons(
-                "where_question",
-                [[(t("btn_loc_later", ctx.lang), "loc:later")]]
+            await self._where_screen(
+                ctx, [[(t("btn_loc_later", ctx.lang), "loc:later")]]
                 + self._back_only(ctx))
             return
         if wizard:

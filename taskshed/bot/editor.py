@@ -93,8 +93,8 @@ class EditorMixin:
             text = note + "\n\n" + text
         if not rows:
             text += "\n" + t("edit_none", ctx.lang)
-        ctx.suppress_menu = True
-        await ctx.reply(text, rows + tabs + self._finish_row(ctx))
+        await self._screen(ctx, "edit_picker", text,
+                           rows + tabs + self._finish_row(ctx))
 
     async def _tasks_with_past(self, user_id: int) -> set[int]:
         """Tasks that already have a finished or missed repeat behind them."""
@@ -109,9 +109,9 @@ class EditorMixin:
             await ctx.reply(t("task_not_found", ctx.lang))
             return
         self._edit_tab[ctx.user.id] = tab
-        ctx.suppress_menu = True
-        await ctx.reply("\n".join([f"✏️ {task.title}"] + await self._task_lines(ctx, task)),
-                        self._task_open_rows(ctx, task))
+        await self._screen(ctx, "edit_card",
+                           "\n".join([f"✏️ {task.title}"] + await self._task_lines(ctx, task)),
+                           self._task_open_rows(ctx, task))
 
 
     async def _cb_edit_field(self, ctx: Ctx, task_id: int, field: str) -> None:

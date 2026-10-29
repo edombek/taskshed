@@ -473,10 +473,11 @@ class TaskWizardMixin:
         await self.store.materialize_occurrences(
             task, datetime.now(ctx.tz).date(), self.cfg.occurrence_horizon_days)
         self.wizards.pop(ctx.user.id, None)
-        ctx.suppress_menu = True  # the card below carries the edit buttons
-        await ctx.reply("\n".join([t("edit_saved", ctx.lang, title=task.title)]
-                                  + await self._task_lines(ctx, task)),
-                        self._task_open_rows(ctx, task))
+        # the saved task redraws the card it was edited from, in place
+        await self._screen(ctx, "edit_card",
+                           "\n".join([t("edit_saved", ctx.lang, title=task.title)]
+                                     + await self._task_lines(ctx, task)),
+                           self._task_open_rows(ctx, task))
 
     async def _wd_buttons(self, ctx: Ctx, w: dict) -> None:
         # chosen days carry a ✅; on Telegram the message is edited in place

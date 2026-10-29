@@ -1,11 +1,17 @@
 """BotBase: transient dialog state + stale-keyboard bookkeeping."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from taskshed.config import BotCfg
 from taskshed.core.models import Account
-from taskshed.messaging.base import IMessenger
+from taskshed.messaging.base import ButtonRows, IMessenger
 from taskshed.storage.repositories import Store
+
+if TYPE_CHECKING:
+    from taskshed.bot.context import Ctx  # circular at runtime: Ctx knows BotBase
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +46,10 @@ class BotBase:
         # live places screen per (user, account): its one message id; all
         # place management (delete ask/confirm, list) redraws that message
         self._pl_msgs: dict[tuple[int, int], str] = {}
+        # menu sub-screens (where-to-send, language, stats period, hour-map
+        # pager, editor picker): screen name -> (user, account) -> message id;
+        # every re-render edits that message instead of stacking a new copy
+        self._screens: dict[str, dict[tuple[int, int], str]] = {}
 
     def _track_kb(self, user_id: int, account: Account, mid: str | None,
                   text: str) -> None:
@@ -52,6 +62,31 @@ class BotBase:
         """Remember which occurrence a live task message owns."""
         if mid:
             self._tl_msgs.setdefault((user_id, account.id), {})[mid] = occ_id
+
+    async def _screen(self, ctx: Ctx, name: str, text: str,
+                      rows: ButtonRows) -> None:
+        """Render a menu screen, reusing its message when we own it.
+
+        Menu walks re-render on every tap (option pick, tab switch, paging);
+        each re-render edits the previous copy in place instead of stacking a
+        fresh one. The first copy lands via ctx.reply — which disarms the
+        other screens of this chat — and its id is remembered per chat.
+        """
+        store = self._screens.setdefault(name, {})
+        key = (ctx.user.id, ctx.account.id)
+        mid = store.get(key)
+        ctx.suppress_menu = True
+        if mid:
+            # other keyboards of this chat go stale; this one is re-rendered below
+            await self._strip_keyboards(ctx.messenger, ctx.account, ctx.user.id,
+                                        keep=mid)
+            if await ctx.messenger.edit_buttons(ctx.account, mid, text, rows):
+                self._track_kb(ctx.user.id, ctx.account, mid, text)
+                ctx.replied = True
+                return
+        new_id = await ctx.reply(text, rows)
+        if new_id:
+            store[key] = new_id
 
     async def _strip_keyboards(self, messenger: IMessenger, account: Account,
                                user_id: int, keep: str = "") -> None:

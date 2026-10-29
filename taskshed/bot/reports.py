@@ -30,8 +30,7 @@ class ReportsMixin:
                 fmt = token
         if period is None:
             # ask the period first: buttons, not required arguments
-            ctx.suppress_menu = True
-            await ctx.reply(t("stats_ask_period", ctx.lang), [
+            await self._screen(ctx, "stats", t("stats_ask_period", ctx.lang), [
                 [(t("btn_per_week", ctx.lang), "per:week"),
                  (t("btn_per_month", ctx.lang), "per:month")],
                 [(t("btn_per_year", ctx.lang), "per:year"),
@@ -82,8 +81,8 @@ class ReportsMixin:
             ctx.replied = True
             return
         # text screen + format buttons: the buttons stay even when this period
-        # is empty — the plan may well sit one week further out
-        ctx.suppress_menu = True
+        # is empty — the plan may well sit one week further out; the same
+        # message that asked for the period turns into the report itself
         body = (t("stats_no_data", ctx.lang) if not occs else
                 self._stats_text(ctx, await self._by_place(ctx.user.id, occs), name))
         rows = [[(t("btn_fmt_chart", ctx.lang), f"fmt:chart:{name}")]]
@@ -96,7 +95,7 @@ class ReportsMixin:
             [(t("btn_fmt_csv", ctx.lang), f"fmt:csv:{name}"),
              (t("btn_fmt_xlsx", ctx.lang), f"fmt:xlsx:{name}")],
         ]
-        await ctx.reply(body, rows + self._finish_row(ctx))
+        await self._screen(ctx, "stats", body, rows + self._finish_row(ctx))
 
     async def _by_place(self, user_id: int,
                         occs: list) -> list[tuple[str, list]]:
@@ -174,10 +173,9 @@ class ReportsMixin:
     async def _hours_nav(self, ctx: Ctx, shift: int,
                          first: date, last: date) -> None:
         """Say which week the hour map drew, and offer the neighbouring ones."""
-        ctx.suppress_menu = True
-        await ctx.reply(t("stats_hours_nav", ctx.lang,
-                          span=f"{first:%d.%m} — {last:%d.%m}"),
-                        self._hours_rows(ctx, shift, first, last))
+        await self._screen(ctx, "hours_nav", t("stats_hours_nav", ctx.lang,
+                                               span=f"{first:%d.%m} — {last:%d.%m}"),
+                           self._hours_rows(ctx, shift, first, last))
 
     async def _hours_week(self, ctx: Ctx, shift: int) -> None:
         """Hour maps of a week moved by whole weeks: the week ahead, or before.
@@ -198,7 +196,8 @@ class ReportsMixin:
         occs = await self.store.occurrences_in_range(ctx.user.id, start, end)
         ctx.suppress_menu = True
         if not occs:
-            await ctx.reply(
+            await self._screen(
+                ctx, "hours_nav",
                 t("stats_no_data", ctx.lang) + "\n"
                 + t("stats_week_range", ctx.lang,
                     span=f"{first:%d.%m} — {last:%d.%m}"),

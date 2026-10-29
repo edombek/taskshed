@@ -237,3 +237,9 @@ Checklist of the implementation roadmap. EN summary in
   keyboards are disarmed — same behaviour as Telegram. Oversized screens
   (VK's 6-row/10-button cap) are sent as a head + "…" continuations; an
   edit reshapes the head and re-lays/removes the tail.
+- Menu audit 2026-10-29 (owner saw 📡 «Куда слать» stack copies in Telegram):
+  the remaining sub-screens — where-to-send, language submenu, stats period
+  (the question turns into the report), hour-map pager, editor picker and
+  the saved edit card, and the «Где вы сейчас?» question — now render through
+  `BotBase._screen`: the first copy lands as a reply, every later tap edits
+  that message and disarms the rest of the chat's keyboards.
