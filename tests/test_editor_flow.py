@@ -2,9 +2,10 @@
 
 from datetime import UTC, datetime, time, timedelta
 
-from chatenv import PID, prev_buttons, send
+from chatenv import PID, send
 
 from taskshed.core.models import ScheduleType
+from taskshed.messaging.base import RawEvent
 
 
 class TestTaskEditor:
@@ -138,8 +139,10 @@ class TestTaskEditor:
 
     async def test_menu_returns_after_the_editor_and_a_skip(self, env):
         # browsing the editor must not leave a dialog open: a skip inside an
-        # open notice stays on the notice (its «Готово» owns the exit), and
-        # that «Готово» then brings the main menu back
+        # open notice edits its task message and stays on the notice (the
+        # «Готово» footer owns the exit), and that «Готово» then brings the
+        # main menu back (app.handle without clearing: the edit targets the
+        # notice's own messages)
         app, store, _ = env
         store, user, _, every, *_ = await self._seed(env)
         home = next(p.id for p in await store.list_places(user.id) if p.name == "Дом")
@@ -148,15 +151,21 @@ class TestTaskEditor:
         await send(env, cb="etab:all")
         await send(env, cb=f"edt:all:{every}")
         assert not app.wizards, "a card is not a dialog: no wizard may stay open"
-        f = await send(env, "/задачи")
-        skip = next(cb for row in prev_buttons(f) for _, cb in row
-                    if cb.startswith("skip:"))
-        f = await send(env, cb=skip)
-        assert "Пропущено" in f.texts()[0]
-        assert "cmd:tasks" not in [cb for row in f.sent[-1].buttons or []
-                                   for _, cb in row]   # no menu mid-notice
-        f = await send(env, cb="fin:")
-        assert "cmd:tasks" in [cb for row in f.sent[-1].buttons for _, cb in row]
+        fake = app.messengers["telegram"]
+        fake.clear()
+        await app.handle(RawEvent("telegram", PID, text="/задачи"))
+        skip = next(cb for m in fake.sent for row in (m.buttons or [])
+                    for _, cb in row if cb.startswith("skip:"))
+        occ = int(skip.split(":")[1])
+        acc = (await store.get_accounts(user.id))[0]
+        tid = next(m for m, o in app._tl_msgs[(user.id, acc.id)].items() if o == occ)
+        n = len(fake.sent)
+        await app.handle(RawEvent("telegram", PID, callback=skip, message_id=tid))
+        assert len(fake.sent) == n  # no fresh copies: the notice stays put
+        assert (await store.get_occurrence(occ))[0].status == "skipped"
+        await app.handle(RawEvent("telegram", PID, callback="fin:"))
+        menu = fake.sent[-1]
+        assert "cmd:tasks" in [cb for row in menu.buttons for _, cb in row]
 
     async def test_place_delete_asks_before_wiping_its_tasks(self, env):
         store, user, future, every, weekly, back, _ = await self._seed(env)

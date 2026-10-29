@@ -509,3 +509,63 @@ class TestUploads:
         ad.send_text = spy
         await ad.send_image(acc, str(tmp_path / "chart.png"), "📊 Неделя")
         assert sent == ["📊 Неделя"]
+
+
+class TestMessageIds:
+    """Taps name messages by per-dialog id; the bot layer knows the global
+    id send returned — the adapter learns the pair from the send echo."""
+
+    async def test_cmid_translated_from_echo(self):
+
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+
+        class Recorder:
+            def __init__(self):
+                self.evs = []
+
+            async def handle(self, ev):
+                self.evs.append(ev)
+
+        ad = VkAdapter(VkCfg(group_token="t"), app=Recorder())
+        ad._can_ack_events = False  # skip the sendMessageEvent probe
+
+        async def dead(method, **params):
+            return {}
+        ad._api = dead
+
+        # our send comes back as an echo carrying both ids
+        await ad._handle_update({"type": "message_reply", "object": {
+            "id": 118, "conversation_message_id": 114,
+            "from_id": -242594545, "out": 1, "text": "task"}})
+        assert ad._cmid_of == {"114": "118"}
+        # the tap names the dialog id — dispatched as the global one
+        await ad._handle_update({"type": "message_event", "object": {
+            "user_id": 9, "peer_id": 9, "event_id": "e",
+            "payload": {"cb": "done:1"}, "conversation_message_id": 114}})
+        ev = ad.app.evs[-1]
+        assert ev.callback == "done:1" and ev.message_id == "118"
+
+    async def test_unmapped_tap_keeps_dialog_id(self):
+        # echo not seen yet (or bot restarted): the id passes through, and the
+        # bot layer's fallback path handles the unknown message
+        from taskshed.config import VkCfg
+        from taskshed.messaging.vk import VkAdapter
+
+        class Recorder:
+            def __init__(self):
+                self.evs = []
+
+            async def handle(self, ev):
+                self.evs.append(ev)
+
+        ad = VkAdapter(VkCfg(group_token="t"), app=Recorder())
+        ad._can_ack_events = False
+
+        async def dead(method, **params):
+            return {}
+        ad._api = dead
+        await ad._handle_update({"type": "message_event", "object": {
+            "user_id": 9, "peer_id": 9, "event_id": "e",
+            "payload": {"cb": "done:1"}, "conversation_message_id": 114}})
+        assert ad.app.evs[-1].message_id == "114"

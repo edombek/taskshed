@@ -198,6 +198,10 @@ class VkAdapter:
         self._can_ack_events = True  # until vk.ru says error 27, see below
         # head message id -> continuation ids of a split screen (edit reshapes it)
         self._cont_ids: dict[str, list] = {}
+        # conversation_message_id -> global message id, learned from the
+        # echo of every sent/edited message: button taps arrive with the
+        # per-dialog id only, but messages.edit speaks the global one
+        self._cmid_of: dict[str, str] = {}
         # every api.vk.com deployment moved to vk.ru: the base is configurable,
         # the long poll host itself VK hands back in the getLongPollServer reply
         self._api_base = (cfg.api_url or "").rstrip("/") + "/"
@@ -272,11 +276,19 @@ class VkAdapter:
         """
         log.info("vk update: %.400r", upd)
         try:
+            obj = upd.get("object") if isinstance(upd, dict) else None
+            if isinstance(obj, dict):
+                gid = obj.get("id")
+                cmid = obj.get("conversation_message_id")
+                if gid and cmid:
+                    # the echo of our own message carries both ids: remember
+                    # the pair so a later tap (which names only the dialog id)
+                    # can be translated to the message we actually sent
+                    self._cmid_of[str(cmid)] = str(gid)
             if (isinstance(upd, dict) and upd.get("type") == "message_event"
                     and self._can_ack_events):
                 # try to stop the button spinner; live vk.ru refuses this with
                 # error 27 for community tokens — then we stop asking
-                obj = upd.get("object") or {}
                 resp = await self._api("messages.sendMessageEvent",
                                        peer_id=obj.get("peer_id"),
                                        event_id=obj.get("event_id"))
@@ -285,6 +297,11 @@ class VkAdapter:
                     log.info("vk: sendMessageEvent is refused with a community "
                              "token (error 27) — taps work, spinners time out")
             ev = parse_longpoll_update(upd)
+            if (ev and isinstance(upd, dict) and upd.get("type") == "message_event"
+                    and ev.message_id):
+                # taps name the message by its per-dialog id; the bot layer
+                # knows messages by the global id send returned
+                ev.message_id = self._cmid_of.get(ev.message_id, ev.message_id)
             if ev and ev.platform_user_id == str(self._group_id):
                 return  # our own outgoing line on the user-LP stream
             if ev:

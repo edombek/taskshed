@@ -242,6 +242,15 @@ Checklist of the implementation roadmap. EN summary in
   keyboards are disarmed — same behaviour as Telegram. Oversized screens
   (VK's 6-row/10-button cap) are sent as a head + "…" continuations; an
   edit reshapes the head and re-lays/removes the tail.
+- VK taps name a message by its per-dialog `conversation_message_id`, not the
+  global id `messages.send` returned — so a ✅/⏭ tap never matched the tracked
+  task message and fell back to a plain reply. Fixed: the adapter learns the
+  pair from the send/edit echo (`_cmid_of`) and rewrites the tap's id before
+  dispatch. Second half of the same bug: that fallback reply disarmed the
+  «Готово» footer on the way, so with the menu suppressed the round had no
+  exit at all (live: "I confirmed a task and never got the main menu back").
+  The fallback now ends the notice round (`_end_notice_round`) so the menu
+  follows the confirmation; in-place edits still keep «Готово» as the one exit.
 - Menu audit 2026-10-29 (owner saw 📡 «Куда слать» stack copies in Telegram):
   the remaining sub-screens — where-to-send, language submenu, stats period
   (the question turns into the report), hour-map pager, editor picker and

@@ -52,11 +52,12 @@ class TestSnoozePicker:
 
 
 class TestEditlessPlatform:
-    """VK cannot edit messages: a status tap answers as a fresh message,
-    and the auto menu tail then lands in the middle of the notice (happened
-    live: the main menu arrived twice before «Готово» was pressed)."""
+    """A platform whose edits always fail (hypothetical — VK and Telegram
+    both edit now): the tap answers as a fresh message, and since that reply
+    cannot disarm the footer, the round ends right there — confirmation plus
+    the main menu, one exit, never a menu waiting behind a dead «Готово»."""
 
-    async def test_done_tap_does_not_push_the_menu(self, env):
+    async def test_done_tap_falls_back_to_reply_plus_menu(self, env):
         app, store, fake = env
         _, occ_id = await _daily_task(env)
         noedit = FakeMessenger("telegram")
@@ -70,8 +71,9 @@ class TestEditlessPlatform:
         n = len(noedit.sent)
         await send(env, cb=f"done:{occ_id}")
         added = noedit.sent[n:]
-        assert len(added) == 1                         # only the confirmation
-        assert not added[0].buttons                    # no menu below it
+        assert len(added) == 2                         # confirmation + menu
+        assert not added[0].buttons                    # the confirmation
+        assert any(cb == "cmd:tasks" for _, cb in added[1].buttons[0])
 
     async def test_stale_tap_outside_a_notice_still_gets_the_menu(self, env):
         app, store, fake = env
@@ -225,15 +227,16 @@ class TestOneMessagePerTask:
         assert f"done:{d1}" in flat  # still open, buttons are back
 
     async def test_unknown_message_falls_back_to_the_old_reply(self, env):
-        # unknown message id (forwarded copy): the fallback is a plain reply;
-        # while the notice is open its «Готово» owns the exit, no menu pushed
+        # unknown message id (forwarded copy, stale keyboard after restart):
+        # the fallback is a plain reply — and since that reply disarms the
+        # «Готово» footer on the way, the main menu follows as the exit
         a, _ = await self._list_with_two(env)
         d1 = next(int(cb.split(":")[1]) for row in a.buttons for _, cb in row
                   if cb.startswith("done:"))
         f = await send(env, cb=f"done:{d1}", msg="telegram-999")
         assert any("Готово" in t for t in f.texts())
-        assert not f.last_buttons()
-        assert a.buttons  # the untouched original keeps its keyboard
+        menu = f.sent[-1]
+        assert menu.buttons and any(cb == "cmd:tasks" for _, cb in menu.buttons[0])
 
 
 class TestNoticeScreen:
@@ -369,3 +372,23 @@ class TestAllTasksSummary:
         assert "tas:all" in [cb for row in prev_buttons(f) for _, cb in row]
         assert any(cb.startswith("cmd:")
                    for row in f.last_buttons() for _, cb in row)
+
+
+class TestNoticeExitAfterLostMessage:
+    """A tap on a task whose message the bot no longer owns (restart, VK id
+    mismatch): the fallback reply disarms the «Готово» footer on the way —
+    so the round must end and the main menu must follow, never silence."""
+
+    async def test_done_fallback_brings_the_menu_back(self, env):
+        app, store, fake = env
+        _, occ = await _daily_task(env)
+        await send(env, "/задачи")  # notice: task msg + «Готово» footer
+        assert (1, 1) in app._fin_msgs
+        app._tl_msgs.clear()  # pretend the live task message is gone
+        await app.handle(RawEvent("telegram", PID, callback=f"done:{occ}",
+                                  message_id="4242"))
+        assert (await store.get_occurrence(occ))[0].status == "done"
+        assert not app._fin_msgs  # the dead footer is forgotten
+        menu = fake.sent[-1]
+        assert menu.buttons and any(cb == "cmd:tasks"
+                                    for _, cb in menu.buttons[0])
