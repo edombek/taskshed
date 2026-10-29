@@ -232,7 +232,8 @@ Checklist of the implementation roadmap. EN summary in
       notice now usually lands on one chat, the cross-platform stale-keyboard
       problem mostly disappears; with `all` the other platform's buttons stay
       live until their ⏭/«Готово» (accepted).
-- On platforms without message editing (VK) a status tap answers as a fresh
-  message; the menu follow-up is suppressed while a notice is open, but the
-  notice's other task keyboards stay visible until «Готово» (VK cannot
-  disarm inline keyboards).
+- VK got real message editing (`messages.edit`, live-verified): a status tap
+  rewrites the tapped message, screens re-render in place, and stale
+  keyboards are disarmed — same behaviour as Telegram. Oversized screens
+  (VK's 6-row/10-button cap) are sent as a head + "…" continuations; an
+  edit reshapes the head and re-lays/removes the tail.

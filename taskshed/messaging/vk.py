@@ -195,6 +195,8 @@ class VkAdapter:
         self._lp_method = ""  # long poll endpoint that worked last time
         self._group_id: int | None = None  # discovered via groups.getById
         self._can_ack_events = True  # until vk.ru says error 27, see below
+        # head message id -> continuation ids of a split screen (edit reshapes it)
+        self._cont_ids: dict[str, list] = {}
         # every api.vk.com deployment moved to vk.ru: the base is configurable,
         # the long poll host itself VK hands back in the getLongPollServer reply
         self._api_base = (cfg.api_url or "").rstrip("/") + "/"
@@ -339,32 +341,65 @@ class VkAdapter:
 
     # ---------- IMessenger ----------
 
-    async def send_text(self, account: Account, text: str) -> None:
-        await self._api("messages.send", peer_id=account.platform_user_id,
-                        message=text, random_id=random.randint(1, 2**31))
+    async def send_text(self, account: Account, text: str) -> str | None:
+        resp = await self._api("messages.send", peer_id=account.platform_user_id,
+                               message=text, random_id=random.randint(1, 2**31))
+        v = resp.get("_value")
+        return str(v) if v else None
 
-    async def send_buttons(self, account: Account, text: str, buttons: ButtonRows) -> None:
+    async def send_buttons(self, account: Account, text: str,
+                           buttons: ButtonRows) -> str | None:
         # VK caps inline keyboards (911), so long screens arrive as several
-        # messages; only the first carries the text
-        for first, chunk in enumerate(pack_keyboards(buttons) or [[]]):
+        # messages; only the first carries the text. The head id is returned
+        # and continuations remembered, so editing that screen rewrites the
+        # head and re-shapes the tail instead of stacking fresh copies.
+        head: str | None = None
+        conts: list = []
+        for i, chunk in enumerate(pack_keyboards(buttons)):
             resp = await self._api("messages.send", peer_id=account.platform_user_id,
-                                   message=text if first == 0 else "…",
+                                   message=text if i == 0 else "…",
                                    keyboard=build_keyboard(chunk),
                                    random_id=random.randint(1, 2**31))
             err = (resp.get("error") or {}).get("error_code")
-            if err == 912 and first == 0:
+            if err == 912 and i == 0:
                 # VK only lets communities with the «чат-бот» status attach
                 # keyboards; without it the conversation must still go on as text
                 log.warning("vk: keyboard refused — enable the chat bot status "
                             "in the community settings; sending text only")
                 await self.send_text(account, text)
-                return
+                return None
+            v = resp.get("_value")
+            if i == 0:
+                head = str(v) if v else None
+            elif v:
+                conts.append(v)
+        if head and conts:
+            self._cont_ids[head] = conts
+        return head
 
     async def edit_buttons(self, account: Account, message_id: str, text: str,
                            buttons: ButtonRows) -> bool:
-        # Bot Long Poll sends do not expose message ids, so VK keeps
-        # appending fresh keyboard messages instead of editing in place
-        return False
+        # messages.edit rewrites text and keyboard of a community message in
+        # place (verified live; an empty keyboard clears the buttons); a
+        # screen that was split keeps its head and gets a fresh tail
+        chunks = pack_keyboards(buttons)
+        resp = await self._api("messages.edit", peer_id=account.platform_user_id,
+                               message_id=message_id, message=text,
+                               keyboard=build_keyboard(chunks[0]))
+        if "error" in resp:
+            return False
+        for cid in self._cont_ids.pop(str(message_id), []):
+            await self._api("messages.delete", message_id=cid)
+        conts: list = []
+        for chunk in chunks[1:]:
+            r = await self._api("messages.send", peer_id=account.platform_user_id,
+                                message="…", keyboard=build_keyboard(chunk),
+                                random_id=random.randint(1, 2**31))
+            if v := r.get("_value"):
+                conts.append(v)
+        if conts:
+            self._cont_ids[str(message_id)] = conts
+        return True
 
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:
         try:

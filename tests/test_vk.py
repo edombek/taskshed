@@ -385,3 +385,53 @@ class TestApiAddress:
         ad = VkAdapter(VkCfg(group_token="t", api_url="https://api.vk.ru/method"),
                        app=None)
         assert ad._api_base == "https://api.vk.ru/method/"
+
+
+class TestEditing:
+    """VK messages.edit works with a community token: status taps and
+    screens rewrite their own messages instead of stacking fresh copies."""
+
+    def _adapter(self):
+        from datetime import UTC, datetime
+
+        from taskshed.config import VkCfg
+        from taskshed.core.models import Account
+        from taskshed.messaging.vk import VkAdapter
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
+        acc = Account(id=1, user_id=1, platform="vk", platform_user_id="9",
+                      linked_at=datetime.now(UTC))
+        calls: list = []
+        seq = {"n": 40}
+
+        async def fake_api(method, **params):
+            calls.append((method, params))
+            seq["n"] += 1
+            return {"_value": seq["n"]}
+        ad._api = fake_api
+        return ad, acc, calls
+
+    async def test_send_returns_head_and_remembers_tail(self):
+        ad, acc, _ = self._adapter()
+        rows = [[(str(i), f"n:{i}")] for i in range(9)]   # 9 rows -> 2 chunks
+        head = await ad.send_buttons(acc, "screen", rows)
+        assert head == "41"
+        assert ad._cont_ids == {"41": [42]}
+
+    async def test_edit_rewrites_head_and_replaces_tail(self):
+        ad, acc, calls = self._adapter()
+        ad._cont_ids["41"] = [42]
+        rows = [[(str(i), f"n:{i}")] for i in range(9)]
+        assert await ad.edit_buttons(acc, "41", "screen", rows)
+        assert [m for m, _ in calls] == ["messages.edit", "messages.delete",
+                                         "messages.send"]
+        assert calls[0][1]["message_id"] == "41"
+        assert calls[1][1] == {"message_id": 42}          # stale tail removed
+        assert ad._cont_ids == {"41": [43]}               # fresh tail noted
+
+    async def test_edit_rejection_reports_false(self):
+        ad, acc, _ = self._adapter()
+
+        async def dead(method, **params):
+            return {"error": {"error_code": 152}}
+        ad._api = dead
+        assert not await ad.edit_buttons(acc, "9", "text", [[("a", "a")]])
