@@ -10,6 +10,9 @@ platform-independent core.
 > The bot never tracks your GPS location — you tell it where you are with one
 > tap ("Home" / "Work" / ...). Reminders are silent when nothing is due.
 
+**Try it live:** [Telegram @taskshedbot](https://t.me/taskshedbot) ·
+[VK community «taskshed»](https://vk.com/taskshed)
+
 ## Features
 
 - Tasks split by **places** you define yourself (`/places`) — or typed straight
