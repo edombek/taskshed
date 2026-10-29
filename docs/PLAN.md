@@ -222,7 +222,12 @@ Checklist of the implementation roadmap. EN summary in
       grouped by place — offered in the notice footer and on an empty day.
 
 ## Backlog / known limitations
-- VK photo/document upload for charts is best-effort (falls back to text).
+- VK photo/document uploads fixed 2026-10-29 (charts silently degraded to text):
+  community tokens reject `photos.saveMessagePhoto` (error 3) — the working
+  path is the classic trio `photos.getMessagesUploadServer` → upload →
+  `photos.saveMessagesPhoto`, attached as `photo{owner}_{id}_{access_key}`;
+  doc attachments must carry the `access_hash`. Both verified live. Text
+  fallback stays as the safety net.
 - Task-creation wizard state is in-memory (lost on restart).
 - Merge on `/link` runs without a confirmation preview of the two sides.
 - PostgreSQL driver (`asyncpg`) not exercised in CI yet.

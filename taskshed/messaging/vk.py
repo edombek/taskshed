@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 
 import aiohttp
@@ -401,19 +402,46 @@ class VkAdapter:
             self._cont_ids[str(message_id)] = conts
         return True
 
+    async def _upload(self, url: str, path: str, filename: str,
+                      content_type: str) -> dict:
+        """POST a file to one of VK's temporary upload servers."""
+        session = await self._http()
+        form = aiohttp.FormData()
+        with open(path, "rb") as fh:
+            form.add_field("file", fh.read(), filename=filename,
+                           content_type=content_type)
+            async with session.post(url, data=form) as resp:
+                return await resp.json()
+
+    async def _send_attach(self, account: Account, caption: str,
+                           attachment: str) -> None:
+        resp = await self._api("messages.send", peer_id=account.platform_user_id,
+                               message=caption, attachment=attachment,
+                               random_id=random.randint(1, 2**31))
+        if "error" in resp:
+            raise RuntimeError(f"messages.send {attachment}: {resp['error']}")
+
     async def send_image(self, account: Account, path: str, caption: str = "") -> None:
+        # live-verified path for community tokens: the modern
+        # photos.saveMessagePhoto is user-only (error 3), but the classic trio
+        # photos.getMessagesUploadServer → upload → photos.saveMessagesPhoto
+        # works, and photo{owner}_{id}_{access_key} attaches to messages.send
         try:
-            up = await self._api("messages.getConversationPhotoUploadServer",
+            up = await self._api("photos.getMessagesUploadServer",
                                  peer_id=account.platform_user_id)
-            session = await self._http()
-            form = aiohttp.FormData()
-            form.add_field("file", open(path, "rb"), content_type="image/png")
-            async with session.post(up["upload_url"], data=form) as resp:
-                res = await resp.json()
-            att = f"photo{res.get('owner_id')}_{res.get('pid') or res.get('photo')}"
-            await self._api("messages.send", peer_id=account.platform_user_id,
-                            message=caption, attachment=att,
-                            random_id=random.randint(1, 2**31))
+            url = up.get("upload_url")
+            if not url:
+                raise RuntimeError(f"no upload_url: {up}")
+            res = await self._upload(url, path, os.path.basename(path), "image/png")
+            saved = await self._api("photos.saveMessagesPhoto", photo=res.get("photo"),
+                                    server=res.get("server"), hash=res.get("hash"))
+            ph = saved.get("_value") or saved.get("photo") or {}
+            # saveMessagesPhoto answers with a list of one photo
+            ph = ph[0] if isinstance(ph, list) else ph
+            if not ph.get("id"):
+                raise RuntimeError(f"saveMessagesPhoto: {saved}")
+            att = f"photo{ph['owner_id']}_{ph['id']}_{ph.get('access_key', '')}"
+            await self._send_attach(account, caption, att)
         except Exception:
             log.exception("vk photo upload failed; falling back to text")
             if caption:
@@ -424,17 +452,18 @@ class VkAdapter:
         try:
             up = await self._api("docs.getMessagesUploadServer",
                                  peer_id=account.platform_user_id, type="doc")
-            session = await self._http()
-            form = aiohttp.FormData()
-            form.add_field("file", open(path, "rb"), filename=name)
-            async with session.post(up["upload_url"], data=form) as resp:
-                res = await resp.json()
-            saved = await self._api("docs.save", file=res["file"])
-            doc = saved.get("doc", {})
-            att = f"doc{doc.get('owner_id')}_{doc.get('id')}"
-            await self._api("messages.send", peer_id=account.platform_user_id,
-                            message=caption, attachment=att,
-                            random_id=random.randint(1, 2**31))
+            url = up.get("upload_url")
+            if not url:
+                raise RuntimeError(f"no upload_url: {up}")
+            res = await self._upload(url, path, name, "application/octet-stream")
+            saved = await self._api("docs.save", file=res.get("file"))
+            doc = saved.get("doc") or {}
+            if not doc.get("id"):
+                raise RuntimeError(f"docs.save: {saved}")
+            # the access_hash is part of the doc attachment: without it
+            # messages.send refuses the reference ("attachment not found")
+            att = f"doc{doc['owner_id']}_{doc['id']}_{doc.get('access_hash', '')}"
+            await self._send_attach(account, caption, att)
         except Exception:
             log.exception("vk document upload failed; falling back to text")
             if caption:

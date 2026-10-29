@@ -435,3 +435,77 @@ class TestEditing:
             return {"error": {"error_code": 152}}
         ad._api = dead
         assert not await ad.edit_buttons(acc, "9", "text", [[("a", "a")]])
+
+
+class TestUploads:
+    """Photos and documents for community tokens: the classic photo trio and
+    docs.save; attachments must carry the access key/hash or VK refuses them."""
+
+    def _adapter(self):
+        from datetime import UTC, datetime
+
+        from taskshed.config import VkCfg
+        from taskshed.core.models import Account
+        from taskshed.messaging.vk import VkAdapter
+        ad = VkAdapter(VkCfg(group_token="t"), app=None)
+        acc = Account(id=1, user_id=1, platform="vk", platform_user_id="9",
+                      linked_at=datetime.now(UTC))
+        calls: list = []
+
+        async def fake_api(method, **params):
+            calls.append((method, params))
+            if method == "photos.getMessagesUploadServer":
+                return {"upload_url": "https://up/photo"}
+            if method == "photos.saveMessagesPhoto":
+                # saveMessagesPhoto answers with a list (bare value in _api)
+                return {"_value": [{"id": 1, "owner_id": 9, "access_key": "k"}]}
+            if method == "docs.getMessagesUploadServer":
+                return {"upload_url": "https://up/doc"}
+            if method == "docs.save":
+                return {"doc": {"id": 2, "owner_id": 9, "access_hash": "h"}}
+            return {"_value": 7}
+        ad._api = fake_api
+
+        async def fake_upload(url, path, filename, content_type):
+            calls.append(("upload", (url, filename, content_type)))
+            return {"photo": "p", "server": "8", "hash": "z", "file": "blob"}
+        ad._upload = fake_upload
+        return ad, acc, calls
+
+    async def test_photo_uses_classic_trio_and_access_key(self, tmp_path):
+        ad, acc, calls = self._adapter()
+        await ad.send_image(acc, str(tmp_path / "chart.png"), "📊 Неделя")
+        assert [m for m, _ in calls] == ["photos.getMessagesUploadServer",
+                                         "upload", "photos.saveMessagesPhoto",
+                                         "messages.send"]
+        save = dict(calls[2][1])
+        assert (save["photo"], save["server"], save["hash"]) == ("p", "8", "z")
+        assert calls[3][1]["attachment"] == "photo9_1_k"
+
+    async def test_document_attachment_carries_access_hash(self, tmp_path):
+        ad, acc, calls = self._adapter()
+        await ad.send_document(acc, str(tmp_path / "stats.csv"), "stats.csv", "📄")
+        assert calls[3][1]["attachment"] == "doc9_2_h"
+
+    async def test_refused_send_falls_back_to_text(self, tmp_path):
+        ad, acc, calls = self._adapter()
+        sent: list = []
+
+        async def dead_api(method, **params):
+            calls.append((method, params))
+            if method == "photos.getMessagesUploadServer":
+                return {"upload_url": "https://up/photo"}
+            if method == "photos.saveMessagesPhoto":
+                return {"_value": [{"id": 1, "owner_id": 9, "access_key": "k"}]}
+            if method == "messages.send":
+                return {"error": {"error_code": 11}}
+            return {"_value": 7}
+        ad._api = dead_api
+        real_send_text = ad.send_text
+
+        async def spy(account, text):
+            sent.append(text)
+            await real_send_text(account, text)  # hits dead_api too
+        ad.send_text = spy
+        await ad.send_image(acc, str(tmp_path / "chart.png"), "📊 Неделя")
+        assert sent == ["📊 Неделя"]
