@@ -114,3 +114,50 @@ class TestEditorPicker:
         # the saved card rewrites itself: no second card for the same task
         cards = [m for m in fake.sent if "Изменено" in m.text]
         assert len(cards) == 1 and cards[0].id == card[0].id
+
+
+class TestWalkBoundaries:
+    """A screen belongs to the walk that opened it. Inside the walk every
+    tap rewrites its message; but a NEW command must open a fresh screen
+    under the user's finger, not revive a copy stranded up the chat
+    (live VK: pressing 📊 Статистика re-edited last week's stats message)."""
+
+    async def test_stats_reopens_fresh_after_the_walk_ended(self, env):
+        app, _, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, callback="cmd:stats"))
+        ask = screens_of(fake, "За какой период")
+        assert len(ask) == 1
+        await app.handle(RawEvent("telegram", PID, callback="menu:back"))
+        await app.handle(RawEvent("telegram", PID, callback="cmd:stats"))
+        asks = screens_of(fake, "За какой период")
+        assert len(asks) == 2 and asks[1].id != asks[0].id
+        assert not asks[0].buttons          # the old screen stays disarmed
+        assert asks[1].buttons              # the fresh one owns the buttons
+
+    async def test_settings_reopens_fresh_after_another_command(self, env):
+        app, _, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, text="/настройки"))
+        assert len([m for m in fake.sent if "⚙️ Настройки" in m.text]) == 1
+        await app.handle(RawEvent("telegram", PID, text="/статистика"))
+        await app.handle(RawEvent("telegram", PID, text="/настройки"))
+        screens = [m for m in fake.sent if "⚙️ Настройки" in m.text]
+        assert len(screens) == 2 and screens[1].id != screens[0].id
+
+    async def test_hour_pager_does_not_edit_yesterday_pager(self, env):
+        app, _, fake = env
+        await send(env, "Дом")
+        await app.handle(RawEvent("telegram", PID, callback="hrs:0"))
+        nav1 = next(m for m in fake.sent if m.buttons and
+                    any(cb.startswith("hrs:")
+                        for row in m.buttons for _, cb in row))
+        await app.handle(RawEvent("telegram", PID, callback="menu:back"))
+        await app.handle(RawEvent("telegram", PID, text="/статистика"))
+        await app.handle(RawEvent("telegram", PID, callback="per:week"))
+        await app.handle(RawEvent("telegram", PID, callback="fmt:hours:week"))
+        last = fake.sent[-1]              # the pager of the new walk
+        assert last.id != nav1.id
+        assert any(cb.startswith("hrs:")
+                   for row in last.buttons for _, cb in row)
+        assert not nav1.buttons           # yesterday's pager stays disarmed

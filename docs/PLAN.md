@@ -257,3 +257,9 @@ Checklist of the implementation roadmap. EN summary in
   the saved edit card, and the «Где вы сейчас?» question — now render through
   `BotBase._screen`: the first copy lands as a reply, every later tap edits
   that message and disarms the rest of the chat's keyboards.
+- In-place screens must not outlive their walk (live VK 2026-10-30: pressing
+  📊 Статистика re-edited last week's stats message, stranded far up the chat).
+  `_end_walk` runs when a new command opens a new walk (main-menu taps, typed
+  commands/place names, ⬅️ Назад/Готово) and forgets every screen/settings id
+  whose keyboard is no longer armed; ids of screens still on screen are kept,
+  so tapping the same command twice in a row still redraws the live screen.

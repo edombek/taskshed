@@ -63,6 +63,26 @@ class BotBase:
         if mid:
             self._tl_msgs.setdefault((user_id, account.id), {})[mid] = occ_id
 
+    def _end_walk(self, user_id: int, account: Account) -> None:
+        """A new command opens a new walk: forget screens that are already dead.
+
+        A stored message id is kept only while its keyboard is still armed —
+        tapping the same command twice in a row redraws the live screen in
+        place. Once a walk ended, its screens were disarmed on the way out,
+        so the next command opens a fresh screen under the user's finger
+        instead of reviving a copy stranded far up the chat (live VK:
+        pressing 📊 Статистика re-edited last week's stats message).
+        """
+        key = (user_id, account.id)
+        armed = self._kb_msgs.get(key, {})
+        for store in self._screens.values():
+            if store.get(key) not in armed:
+                store.pop(key, None)
+        if self._rem_msgs.get(key) not in armed:
+            self._rem_msgs.pop(key, None)
+        if self._pl_msgs.get(key) not in armed:
+            self._pl_msgs.pop(key, None)
+
     async def _screen(self, ctx: Ctx, name: str, text: str,
                       rows: ButtonRows) -> None:
         """Render a menu screen, reusing its message when we own it.

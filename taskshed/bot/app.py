@@ -92,6 +92,11 @@ class BotApp(
         wizard = self.wizards.get(ctx.user.id)
         if not text and not wizard:
             return
+        if wizard is None and ctx.user.id not in self._pending_inputs:
+            # a typed command or place name starts a new walk (a wizard or an
+            # awaited setting value continues the current one): screens of
+            # the previous walk must not be revived further down the chat
+            self._end_walk(ctx.user.id, ctx.account)
         if text.startswith("/"):
             name, _, rest = text[1:].partition(" ")
             name = name.split("@")[0].lower()
@@ -203,6 +208,8 @@ class BotApp(
     async def _on_callback(self, ctx: Ctx, cb: str) -> None:
         action, _, arg = cb.partition(":")
         if action == "cmd":  # inline menu buttons from /start and /help
+            # a main-menu button opens a new walk: old screens go stale here
+            self._end_walk(ctx.user.id, ctx.account)
             handler = getattr(self, f"_cmd_{arg}", None)
             if handler:
                 await handler(ctx, "")
@@ -312,7 +319,7 @@ class BotApp(
                 await ctx.reply(t("wizard_cancelled", ctx.lang))
         elif action == "menu" and arg == "back":
             # submenu screens offer ⬅️ Назад: return to the main command menu
-            self._rem_msgs.pop((ctx.user.id, ctx.account.id), None)
+            self._end_walk(ctx.user.id, ctx.account)
             self._pending_inputs.pop(ctx.user.id, None)  # drop awaited inputs
             if self.wizards.get(ctx.user.id, {}).get("kind") == "addplace":
                 self.wizards.pop(ctx.user.id, None)
